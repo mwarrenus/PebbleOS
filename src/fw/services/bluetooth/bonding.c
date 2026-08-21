@@ -61,8 +61,18 @@ void bt_driver_cb_handle_create_bonding(const BleBonding *bonding,
   if (flags) {
     PBL_LOG_INFO("flags: 0x02%x", flags);
   }
+  char name_buf[BT_DEVICE_NAME_BUFFER_SIZE] = {0};
+  const char *device_name = NULL;
+  bt_lock();
+  GAPLEConnection *connection = gap_le_connection_by_addr(addr);
+  if (connection && connection->device_name && connection->device_name[0] != '\0') {
+    strncpy(name_buf, connection->device_name, sizeof(name_buf) - 1);
+    device_name = name_buf;
+  }
+  bt_unlock();
+
   BTBondingID bonding_id = bt_persistent_storage_store_ble_pairing(&bonding->pairing_info,
-                                                                   bonding->is_gateway, NULL,
+                                                                   bonding->is_gateway, device_name,
                                                                    should_pin_address,
                                                                    flags);
   if (bonding_id == BT_BONDING_ID_INVALID) {

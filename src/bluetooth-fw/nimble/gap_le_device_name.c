@@ -63,17 +63,12 @@ static int prv_device_name_read_event_cb(uint16_t conn_handle, const struct ble_
       kernel_free(connection->device_name);
     }
     connection->device_name = device_name;
+  } else {
+    kernel_free(device_name);
   }
   addr_copy = connection->device.address;
 
   bt_unlock();
-
-  if (!changed) {
-    // Same name as before: don't re-persist it (each store rewrites the
-    // pairing storage and fires bonding change handlers).
-    kernel_free(device_name);
-    return 0;
-  }
 
   BTDeviceAddress *addr = kernel_zalloc_check(sizeof(BTDeviceAddress));
   *addr = addr_copy;

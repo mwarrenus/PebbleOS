@@ -160,6 +160,9 @@ static void prv_add_ble_remotes(SettingsBluetoothData *data) {
         connection = gap_le_connection_by_device(&device);
       }
       remote->ble.connection = connection;
+      if (connection && connection->device_name && connection->device_name[0] != '\0') {
+        prv_copy_device_name_with_fallback(remote, connection->device_name);
+      }
 #ifdef CONFIG_HRM
       remote->ble.is_sharing_heart_rate = ble_hrm_is_sharing_to_connection(connection);
 #endif
@@ -223,7 +226,7 @@ static void prv_settings_bluetooth_event_handler(PebbleEvent *event, void *conte
 #endif
     case PEBBLE_BLE_DEVICE_NAME_UPDATED_EVENT: {
       const unsigned int prev_num_remotes = settings_data->remote_list_head ? list_count(settings_data->remote_list_head) : 0;
-      settings_bluetooth_update_remotes_private(settings_data);
+      settings_bluetooth_update_remotes(settings_data);
       const unsigned int new_num_remotes = settings_data->remote_list_head ? list_count(settings_data->remote_list_head) : 0;
       const uint8_t max_phones = bt_persistent_storage_get_max_phones();
       
@@ -241,8 +244,6 @@ static void prv_settings_bluetooth_event_handler(PebbleEvent *event, void *conte
           PBL_LOG_INFO("Disabled advertising - max_phones paired");
         }
       }
-      
-      settings_menu_mark_dirty(SettingsMenuItemBluetooth);
       break;
     }
 
@@ -515,7 +516,7 @@ static void prv_focus_handler(bool in_focus) {
 static void prv_expand_cb(SettingsCallbacks *context) {
   SettingsBluetoothData *data = (SettingsBluetoothData *) context;
 
-  settings_bluetooth_update_remotes_private(data);
+  settings_bluetooth_update_remotes(data);
 
   // When entering the BT Settings, update device names of all connected devices:
   if (!bt_ctl_is_airplane_mode_on()) {
