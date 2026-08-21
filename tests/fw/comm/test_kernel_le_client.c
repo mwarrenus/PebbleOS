@@ -59,6 +59,14 @@ BTErrno gap_le_connect_connect_by_bonding(BTBondingID bonding_id, bool auto_reco
   return BTErrnoOK;
 }
 
+bool gap_le_connect_is_max_slave_connections_reached(void) {
+  return false;
+}
+
+uint8_t gap_le_connect_num_slave_connections(void) {
+  return 0;
+}
+
 void gap_le_slave_reconnect_start(void) {
 }
 

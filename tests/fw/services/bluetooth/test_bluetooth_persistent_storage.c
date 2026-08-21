@@ -725,3 +725,17 @@ void test_bluetooth_persistent_storage__ble_serialized_data(void) {
   cl_assert_equal_m(expected_raw_data, data, sizeof(expected_raw_data));
 }
 
+void test_bluetooth_persistent_storage__max_phones(void) {
+  cl_assert_equal_i(bt_persistent_storage_get_max_phones(), 1);
+
+  bt_persistent_storage_set_max_phones(2);
+  cl_assert_equal_i(bt_persistent_storage_get_max_phones(), 2);
+
+  bt_persistent_storage_set_max_phones(1);
+  cl_assert_equal_i(bt_persistent_storage_get_max_phones(), 1);
+
+  // Ignore invalid values
+  bt_persistent_storage_set_max_phones(5);
+  cl_assert_equal_i(bt_persistent_storage_get_max_phones(), 1);
+}
+

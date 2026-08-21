@@ -12,3 +12,10 @@ void WEAK bt_persistent_storage_get_cached_system_capabilities(
     capabilities_out->flags = 0;
   }
 }
+
+uint8_t WEAK bt_persistent_storage_get_max_phones(void) {
+  return 1;
+}
+
+void WEAK bt_persistent_storage_set_max_phones(uint8_t max_phones) {
+}

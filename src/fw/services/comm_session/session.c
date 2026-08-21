@@ -192,8 +192,12 @@ CommSession * comm_session_open(Transport *transport, const TransportImplementat
         // is running over PPoGATT. If the app launches again, it will have no state of what was the
         // previously used transport was, prior to getting killed. Often, iAP ends up winning.
         // However, to the firmware, PPoGATT still appears connected, so we'd end up here.
-        PBL_LOG_INFO("System session already exists, closing it now");
-        existing_system_session->transport_imp->close(existing_system_session->transport);
+        //
+        if (bt_persistent_storage_get_max_phones() == 1 ||
+            existing_system_session->transport == transport) {
+          PBL_LOG_INFO("System session already exists, closing it now");
+          existing_system_session->transport_imp->close(existing_system_session->transport);
+        }
       }
     }
   }

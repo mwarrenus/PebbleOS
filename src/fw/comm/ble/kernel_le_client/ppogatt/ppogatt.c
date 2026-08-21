@@ -1002,9 +1002,10 @@ void ppogatt_create(void) {
   bt_lock();
   {
     PBL_ASSERT_TASK(PebbleTask_KernelMain);
-    PBL_ASSERTN(!s_ppogatt_head);
-    s_timer_ticks = 0;
-    s_rediscovery_requested_this_connection = false;
+    if (!s_ppogatt_head) {
+      s_timer_ticks = 0;
+      s_rediscovery_requested_this_connection = false;
+    }
   }
   bt_unlock();
 }

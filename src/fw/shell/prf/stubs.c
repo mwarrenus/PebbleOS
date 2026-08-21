@@ -242,6 +242,13 @@ bool bt_persistent_storage_get_airplane_mode_enabled(void) {
 void bt_persistent_storage_set_airplane_mode_enabled(bool *state) {
 }
 
+uint8_t bt_persistent_storage_get_max_phones(void) {
+  return 1;
+}
+
+void bt_persistent_storage_set_max_phones(uint8_t max_phones) {
+}
+
 uint32_t backlight_get_timeout_ms(void) {
   return DEFAULT_BACKLIGHT_TIMEOUT_MS;
 }

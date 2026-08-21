@@ -104,6 +104,8 @@ static const char ROOT_KEYS_KEY[] = "ROOT_KEYS";
 static const char DEVICE_NAME_KEY[] = "DEVICE_NAME";
 //! This key is used to access a bool which stores the current airplane mode state
 static const char AIRPLANE_MODE_KEY[] = "AIRPLANE_MODE";
+//! This key is used to access a uint8_t which stores the max phone connections setting (1 or 2)
+static const char MAX_PHONES_KEY[] = "MAX_PHONES";
 //! This key is used to access a uint64_t which stores the most recent system session capabilities
 static const char SYSTEM_CAPABILITIES_KEY[] = "SYSTEM_CAPABILITIES";
 //! This key is used to access the BLE address that can be used for address pinning.
@@ -594,69 +596,22 @@ static bool prv_delete_ble_pairing_by_id(BTBondingID bonding);
 #define BT_BONDING_PRUNE_MAX 8
 
 typedef struct {
-  BTBondingID keep_id;
-  BTBondingID ids[BT_BONDING_PRUNE_MAX];
-  uint8_t count;
-} CollectOtherBleItrData;
-
-static bool prv_collect_other_ble_bondings_itr(SettingsFile *file, SettingsRecordInfo *info,
-                                               void *context) {
-  if (info->val_len == 0 || info->key_len != sizeof(BTBondingID)) {
-    return true;
-  }
-
-  CollectOtherBleItrData *itr_data = context;
-
-  BTBondingID key;
-  info->get_key(file, (uint8_t *)&key, info->key_len);
-  if (key == itr_data->keep_id) {
-    return true;
-  }
-
-  BtPersistBondingData stored_data;
-  info->get_val(file, (uint8_t *)&stored_data, MIN((unsigned)info->val_len, sizeof(stored_data)));
-  if (stored_data.type != BtPersistBondingTypeBLE) {
-    return true;
-  }
-
-  if (itr_data->count < BT_BONDING_PRUNE_MAX) {
-    itr_data->ids[itr_data->count++] = key;
-  }
-  return true;
-}
-
-//! Delete every BLE bonding except `keep_id`. We only ever support one BLE pairing at a time, so
-//! any other BLE bonding present is stale and must be removed (e.g. when a new phone pairs and
-//! replaces the previous one).
-//!
-//! Uses the internal delete helper that does not erase shared PRF pairing data, since the kept
-//! entry is the one that should remain reflected in PRF storage.
-static void prv_delete_other_ble_bondings(BTBondingID keep_id) {
-  CollectOtherBleItrData itr_data = {
-    .keep_id = keep_id,
-    .count = 0,
-  };
-  prv_file_each(prv_collect_other_ble_bondings_itr, &itr_data);
-
-  for (uint8_t i = 0; i < itr_data.count; i++) {
-    PBL_LOG_INFO("Removing stale BLE bonding %d (kept %d)", itr_data.ids[i], keep_id);
-    prv_delete_ble_pairing_by_id(itr_data.ids[i]);
-  }
-}
+  BTBondingID id;
+  uint32_t last_modified;
+} BleBondingPruneInfo;
 
 typedef struct {
-  BTBondingID key_out;
-  uint32_t last_modified_out;
-  uint8_t ble_count;
-} MostRecentBleItrData;
+  BleBondingPruneInfo bondings[BT_BONDING_PRUNE_MAX];
+  uint8_t count;
+} CollectAllBleItrData;
 
-static bool prv_find_most_recent_ble_bonding_itr(SettingsFile *file, SettingsRecordInfo *info,
-                                                 void *context) {
+static bool prv_collect_all_ble_bondings_itr(SettingsFile *file, SettingsRecordInfo *info,
+                                             void *context) {
   if (info->val_len == 0 || info->key_len != sizeof(BTBondingID)) {
     return true;
   }
 
-  MostRecentBleItrData *itr_data = context;
+  CollectAllBleItrData *itr_data = context;
 
   BtPersistBondingData stored_data;
   info->get_val(file, (uint8_t *)&stored_data, MIN((unsigned)info->val_len, sizeof(stored_data)));
@@ -667,33 +622,37 @@ static bool prv_find_most_recent_ble_bonding_itr(SettingsFile *file, SettingsRec
   BTBondingID key;
   info->get_key(file, (uint8_t *)&key, info->key_len);
 
-  itr_data->ble_count++;
-  if (itr_data->key_out == BT_BONDING_ID_INVALID ||
-      info->last_modified > itr_data->last_modified_out) {
-    itr_data->key_out = key;
-    itr_data->last_modified_out = info->last_modified;
+  if (itr_data->count < BT_BONDING_PRUNE_MAX) {
+    itr_data->bondings[itr_data->count].id = key;
+    itr_data->bondings[itr_data->count].last_modified = info->last_modified;
+    itr_data->count++;
   }
   return true;
 }
 
-//! If the bonding DB contains multiple BLE pairings (e.g. left over from an older firmware that
-//! allowed more than one, or from a PRF pairing merged on top of an existing one), keep the most
-//! recently modified entry and drop the rest.
+//! If the bonding DB contains more BLE pairings than max_phones, keep the most
+//! recently modified entries and drop the oldest excess ones.
 static void prv_prune_stale_ble_bondings(void) {
-  MostRecentBleItrData itr_data = {
-    .key_out = BT_BONDING_ID_INVALID,
-    .last_modified_out = 0,
-    .ble_count = 0,
-  };
-  prv_file_each(prv_find_most_recent_ble_bonding_itr, &itr_data);
+  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+  CollectAllBleItrData itr_data = { .count = 0 };
+  prv_file_each(prv_collect_all_ble_bondings_itr, &itr_data);
 
-  if (itr_data.ble_count <= 1 || itr_data.key_out == BT_BONDING_ID_INVALID) {
-    return;
+  while (itr_data.count > max_phones) {
+    uint8_t oldest_idx = 0;
+    for (uint8_t i = 1; i < itr_data.count; i++) {
+      if (itr_data.bondings[i].last_modified < itr_data.bondings[oldest_idx].last_modified) {
+        oldest_idx = i;
+      }
+    }
+
+    PBL_LOG_INFO("Removing stale BLE bonding %d (max %u)",
+                 itr_data.bondings[oldest_idx].id, max_phones);
+    prv_delete_ble_pairing_by_id(itr_data.bondings[oldest_idx].id);
+
+    // Remove it from our tracking array by swapping with the last element
+    itr_data.bondings[oldest_idx] = itr_data.bondings[itr_data.count - 1];
+    itr_data.count--;
   }
-
-  PBL_LOG_INFO("Found %u BLE bondings at boot, keeping most recent (id %d)",
-               itr_data.ble_count, itr_data.key_out);
-  prv_delete_other_ble_bondings(itr_data.key_out);
 }
 
 //! For unit testing
@@ -777,10 +736,11 @@ BTBondingID bt_persistent_storage_store_ble_pairing(const SMPairingInfo *new_pai
 
   prv_call_ble_bonding_change_handlers(key, op);
 
-  // We only support a single BLE pairing at a time. Drop any previous BLE bonding so that
-  // re-pairing with a different phone (or merging a PRF pairing) replaces the old one instead of
-  // leaving it behind and forcing the user to forget it manually.
-  prv_delete_other_ble_bondings(key);
+  // If adding this new pairing pushes us over the limit, prune the oldest ones to make
+  // room. This ensures that re-pairing with a different phone (or merging a PRF pairing)
+  // replaces the oldest one instead of leaving it behind and forcing the user to forget
+  // it manually.
+  prv_prune_stale_ble_bondings();
 
   return key;
 }
@@ -1401,6 +1361,22 @@ bool bt_persistent_storage_get_airplane_mode_enabled(void) {
 void bt_persistent_storage_set_airplane_mode_enabled(bool new_state) {
   prv_file_set(&AIRPLANE_MODE_KEY, sizeof(AIRPLANE_MODE_KEY),
                &new_state, sizeof(bool));
+}
+
+uint8_t bt_persistent_storage_get_max_phones(void) {
+  uint8_t val = 1;
+  int read_size = prv_file_get(&MAX_PHONES_KEY, sizeof(MAX_PHONES_KEY), &val, sizeof(val));
+  if (!read_size || (val != 1 && val != 2)) {
+    return 1;
+  }
+  return val;
+}
+
+void bt_persistent_storage_set_max_phones(uint8_t max_phones) {
+  if (max_phones != 1 && max_phones != 2) {
+    return;
+  }
+  prv_file_set(&MAX_PHONES_KEY, sizeof(MAX_PHONES_KEY), &max_phones, sizeof(max_phones));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

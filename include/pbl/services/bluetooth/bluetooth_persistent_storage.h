@@ -137,6 +137,12 @@ bool bt_persistent_storage_get_airplane_mode_enabled(void);
 //! @param enable the airplane mode state to be saved
 void bt_persistent_storage_set_airplane_mode_enabled(bool enable);
 
+//! Retrieve the stored maximum allowed phone connections setting (1 or 2, default 1)
+uint8_t bt_persistent_storage_get_max_phones(void);
+
+//! Store the maximum allowed phone connections setting (1 or 2)
+void bt_persistent_storage_set_max_phones(uint8_t max_phones);
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //! Remote Device Info
 

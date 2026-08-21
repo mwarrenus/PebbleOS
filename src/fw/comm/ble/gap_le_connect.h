@@ -28,6 +28,12 @@ void gap_le_connect_deinit(void);
 
 bool gap_le_connect_is_connected_as_slave(void);
 
+uint8_t gap_le_connect_num_slave_connections(void);
+
+bool gap_le_connect_is_max_slave_connections_reached(void);
+
+void gap_le_connect_enforce_max_slave_connections(void);
+
 void gap_le_connect_handle_bonding_change(BTBondingID bonding, BtPersistBondingOp op);
 
 BTErrno gap_le_connect_connect(const BTDeviceInternal *device, bool auto_reconnect,

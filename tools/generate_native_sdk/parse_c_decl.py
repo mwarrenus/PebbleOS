@@ -277,7 +277,14 @@ def parse_file(
         .decode("utf8")
         .strip()
     )
-    args.append("-I%s" % os.path.join(sysroot, "include"))
+    if sysroot:
+        sysroot_inc = os.path.join(sysroot, "include")
+        if os.path.exists(sysroot_inc):
+            args.append("-I%s" % sysroot_inc)
+
+    picolibc_inc = os.path.abspath("build/picolibc/install/include")
+    if os.path.exists(picolibc_inc):
+        args.append("-I%s" % picolibc_inc)
 
     # Find the arm-none-eabi-gcc libgcc path including stdbool.h
     cmd = ["arm-none-eabi-gcc"] + ["-E", "-v", "-xc", "-"]

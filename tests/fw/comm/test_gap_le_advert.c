@@ -36,6 +36,10 @@ bool gap_le_connect_is_connected_as_slave(void) {
   return s_is_connected_as_slave;
 }
 
+bool gap_le_connect_is_max_slave_connections_reached(void) {
+  return s_is_connected_as_slave;
+}
+
 void ble_legacy_discovery_enable(uint32_t timeout_secs) {
 }
 

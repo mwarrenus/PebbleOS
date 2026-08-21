@@ -20,6 +20,7 @@ extern void comm_session_send_next_immediately(CommSession *session);
 ///////////////////////////////////////////////////////////
 
 #include "stubs_analytics.h"
+#include "stubs_bluetooth_persistent_storage.h"
 #include "stubs_bt_lock.h"
 #include "stubs_bt_stack.h"
 #include "stubs_logging.h"

@@ -178,6 +178,7 @@ Or re-configure with the --relax_toolchain_restrictions option. """
 
     conf.env.CFLAGS.append("-I" + conf.path.abspath() + "/src/fw/util/time")
 
+    c_warnings.append("-Wno-error=unused-but-set-variable")
     conf.env.append_value("CFLAGS", c_warnings)
 
     conf.env.ASFLAGS = ["-xassembler-with-cpp", "-c"]

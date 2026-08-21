@@ -56,6 +56,14 @@ def configure(conf):
         pebble_cflags.append("-D_TIME_H_")
         # Override time_t to be 32-bit for Pebble compatibility (newer toolchains default to 64-bit)
         pebble_cflags.append("-Dtime_t=long")
+    import os
+    specs = os.path.abspath("build/picolibc/install/lib/picolibc.specs")
+    if os.path.exists(specs):
+        pebble_cflags.append("-specs=" + specs)
+    else:
+        picolibc_inc = os.path.abspath("build/picolibc/install/include")
+        if os.path.exists(picolibc_inc):
+            pebble_cflags.append("-isystem%s" % picolibc_inc)
     pebble_cflags.extend(c_warnings)
 
     pebble_linkflags = [
@@ -66,6 +74,9 @@ def configure(conf):
         "-fPIE",
         optimize_flag,
     ]
+    if os.path.exists(specs):
+        pebble_linkflags.append("-specs=" + specs)
+        pebble_linkflags.append("-nostartfiles")
 
     conf.env.prepend_value("CFLAGS", pebble_cflags)
     conf.env.prepend_value("LINKFLAGS", pebble_linkflags)

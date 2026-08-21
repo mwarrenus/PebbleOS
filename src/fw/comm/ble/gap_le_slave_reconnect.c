@@ -195,8 +195,8 @@ void gap_le_slave_reconnect_start(void) {
       goto unlock;
     }
 
-    if (gap_le_connect_is_connected_as_slave()) {
-      PBL_LOG_DBG("Already connected as slave");
+    if (gap_le_connect_is_max_slave_connections_reached()) {
+      PBL_LOG_DBG("Max slave connections reached");
       goto unlock;
     }
 

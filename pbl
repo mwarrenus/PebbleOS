@@ -24,6 +24,13 @@ import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+venv_bin = os.path.join(REPO_ROOT, ".venv", "bin")
+venv_python = os.path.join(venv_bin, "python3")
+if os.path.isdir(venv_bin):
+    os.environ["PATH"] = venv_bin + os.path.pathsep + os.environ.get("PATH", "")
+if os.path.isfile(venv_python) and sys.executable != venv_python and "VIRTUAL_ENV" not in os.environ:
+    os.execv(venv_python, [venv_python] + sys.argv)
+
 BUILD_DIR = os.path.join(REPO_ROOT, "build")
 LANG_DIR_REL = "resources/normal/base/lang"
 

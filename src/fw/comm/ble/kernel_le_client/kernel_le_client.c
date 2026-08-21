@@ -428,27 +428,41 @@ static void prv_handle_connection_event(const PebbleBLEConnectionEvent *event) {
   if (connected) {
     PBL_LOG_DBG("Connected to Gateway!");
 
+    // TODO: ANCS and AMS clients are currently singletons, which means the watch only
+    // properly supports receiving notifications and media controls from one iOS device
+    // at a time. In the future, we should refactor ANCS and AMS to support multiple
+    // instances to fully support two iPhones simultaneously.
 #if defined(CONFIG_BT_ANCS_CLIENT)
-    ancs_create();
+    if (gap_le_connect_num_slave_connections() <= 1) {
+      ancs_create();
+    }
 #endif
 #if defined(CONFIG_BT_AMS_CLIENT)
-    ams_create();
+    if (gap_le_connect_num_slave_connections() <= 1) {
+      ams_create();
+    }
 #endif
     ppogatt_create();
 
-    gap_le_slave_reconnect_stop();
+    if (gap_le_connect_is_max_slave_connections_reached()) {
+      gap_le_slave_reconnect_stop();
+    } else {
+      gap_le_slave_reconnect_start();
+    }
     gatt_client_discovery_discover_all(&device);
 
   } else {
     PBL_LOG_DBG("Disconnected from Gateway!");
-    ppogatt_destroy();
+    if (gap_le_connect_num_slave_connections() == 0) {
+      ppogatt_destroy();
 #if defined(CONFIG_BT_AMS_CLIENT)
-    ams_destroy();
+      ams_destroy();
 #endif
 #if defined(CONFIG_BT_ANCS_CLIENT)
-    ancs_destroy();
+      ancs_destroy();
 #endif
-    app_launch_handle_disconnection();
+      app_launch_handle_disconnection();
+    }
     gap_le_slave_reconnect_start();
     gatt_client_op_cleanup(GAPLEClientKernel);
   }

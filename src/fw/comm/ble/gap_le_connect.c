@@ -132,8 +132,8 @@ static GAPLEConnectionIntent * s_intents;
 //! True if there is a pending LE Create Connection call, false if not.
 static bool s_has_pending_create_connection;
 
-//! True if the device is currently connected as LE Slave (4.0)
-static bool s_is_connected_as_slave;
+//! Number of devices currently connected as LE Slave (4.0)
+static uint8_t s_num_slave_connections;
 
 //! TODO: Implement role-switching (PBL-20368)
 //! This is just a placeholder / stop-gap for now that is always set to GAPLERoleSlave, so that we
@@ -385,7 +385,7 @@ void bt_driver_handle_le_connection_complete_event(const BleConnectionCompleteEv
       const bool local_is_master = event->is_master;
 
       if (!local_is_master) {
-        s_is_connected_as_slave = true;
+        s_num_slave_connections++;
         gap_le_advert_handle_connect_as_slave();
 
         prv_put_legacy_connection_event(&event->peer_address, true /* connected */);
@@ -511,7 +511,9 @@ void bt_driver_handle_le_disconnection_complete_event(const BleDisconnectionComp
           event->reason, &connection->remote_version_info);
 
       if (!local_is_master) {
-        s_is_connected_as_slave = false;
+        if (s_num_slave_connections > 0) {
+          s_num_slave_connections--;
+        }
         gap_le_advert_handle_disconnect_as_slave();
 
         prv_put_legacy_connection_event(&event->peer_address, false /* disconnected */);
@@ -1152,10 +1154,57 @@ bool gap_le_connect_is_connected_as_slave(void) {
   bool connected;
   bt_lock();
   {
-    connected = s_is_connected_as_slave;
+    connected = (s_num_slave_connections > 0);
   }
   bt_unlock();
   return connected;
+}
+
+uint8_t gap_le_connect_num_slave_connections(void) {
+  uint8_t count;
+  bt_lock();
+  {
+    count = s_num_slave_connections;
+  }
+  bt_unlock();
+  return count;
+}
+
+bool gap_le_connect_is_max_slave_connections_reached(void) {
+  bool max_reached;
+  bt_lock();
+  {
+    const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+    max_reached = (s_num_slave_connections >= max_phones);
+  }
+  bt_unlock();
+  return max_reached;
+}
+
+static void prv_disconnect_excess_slave_cb(GAPLEConnection *connection, void *context) {
+  uint8_t *count = (uint8_t *)context;
+  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+  if (!connection->local_is_master && *count > max_phones) {
+    if (!connection->is_gateway) {
+      PBL_LOG_INFO("Enforcing max_phones (%u): disconnecting secondary connection", max_phones);
+      bt_driver_gap_le_disconnect(&connection->device);
+      if (*count > 0) {
+        (*count)--;
+      }
+    }
+  }
+}
+
+void gap_le_connect_enforce_max_slave_connections(void) {
+  bt_lock();
+  {
+    const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+    if (s_num_slave_connections > max_phones) {
+      uint8_t count = s_num_slave_connections;
+      gap_le_connection_for_each(prv_disconnect_excess_slave_cb, &count);
+    }
+  }
+  bt_unlock();
 }
 
 
@@ -1192,12 +1241,12 @@ void gap_le_connect_deinit(void) {
       intent = next;
     }
 
-    if (s_is_connected_as_slave) {
+    if (s_num_slave_connections > 0) {
       // The BT controller will not send an etLE_Disconnection_Complete event
       // when going to airplane mode while being connected.
       // Stop analytics stopwatches manually:
       bluetooth_analytics_handle_disconnect(false);
-      s_is_connected_as_slave = false;
+      s_num_slave_connections = 0;
     }
   }
   bt_unlock();
