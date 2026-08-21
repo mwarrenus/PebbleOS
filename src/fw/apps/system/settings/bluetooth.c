@@ -206,6 +206,29 @@ void settings_bluetooth_update_remotes(SettingsBluetoothData *data) {
 
 //////////
 
+static SettingsBluetoothData *s_bluetooth_data = NULL;
+
+static void prv_update_pairability(SettingsBluetoothData *data) {
+  if (!data) {
+    return;
+  }
+  const unsigned int num_remotes = data->remote_list_head ? list_count(data->remote_list_head) : 0;
+  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+  if (num_remotes < max_phones) {
+    if (!data->did_enable_pairability) {
+      bt_pairability_use();
+      data->did_enable_pairability = true;
+      PBL_LOG_INFO("Enabled advertising - fewer than max_phones paired");
+    }
+  } else {
+    if (data->did_enable_pairability) {
+      bt_pairability_release();
+      data->did_enable_pairability = false;
+      PBL_LOG_INFO("Disabled advertising - max_phones paired");
+    }
+  }
+}
+
 static void prv_settings_bluetooth_event_handler(PebbleEvent *event, void *context) {
   SettingsBluetoothData* settings_data = (SettingsBluetoothData *) context;
   PBL_LOG_DBG("BT EVENT");
@@ -225,25 +248,8 @@ static void prv_settings_bluetooth_event_handler(PebbleEvent *event, void *conte
     case PEBBLE_BLE_HRM_SHARING_STATE_UPDATED_EVENT:
 #endif
     case PEBBLE_BLE_DEVICE_NAME_UPDATED_EVENT: {
-      const unsigned int prev_num_remotes = settings_data->remote_list_head ? list_count(settings_data->remote_list_head) : 0;
       settings_bluetooth_update_remotes(settings_data);
-      const unsigned int new_num_remotes = settings_data->remote_list_head ? list_count(settings_data->remote_list_head) : 0;
-      const uint8_t max_phones = bt_persistent_storage_get_max_phones();
-      
-      // Handle pairing policy: enable/disable advertising based on max_phones setting
-      if (prev_num_remotes >= max_phones && new_num_remotes < max_phones) {
-        if (!settings_data->did_enable_pairability) {
-          bt_pairability_use();
-          settings_data->did_enable_pairability = true;
-          PBL_LOG_INFO("Enabled advertising - fewer than max_phones paired");
-        }
-      } else if (prev_num_remotes < max_phones && new_num_remotes >= max_phones) {
-        if (settings_data->did_enable_pairability) {
-          bt_pairability_release();
-          settings_data->did_enable_pairability = false;
-          PBL_LOG_INFO("Disabled advertising - max_phones paired");
-        }
-      }
+      prv_update_pairability(settings_data);
       break;
     }
 
@@ -488,21 +494,9 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     bt_persistent_storage_set_max_phones(new_max);
 
     gap_le_connect_enforce_max_slave_connections();
-
-    if (num_remotes < new_max) {
-      if (!data->did_enable_pairability) {
-        bt_pairability_use();
-        data->did_enable_pairability = true;
-      }
-    } else {
-      if (data->did_enable_pairability) {
-        bt_pairability_release();
-        data->did_enable_pairability = false;
-      }
-    }
-
     gap_le_slave_reconnect_start();
     settings_bluetooth_update_remotes(data);
+    prv_update_pairability(data);
   }
 }
 
@@ -510,11 +504,17 @@ static void prv_focus_handler(bool in_focus) {
   if (!in_focus) {
     return;
   }
-  settings_menu_reload_data(SettingsMenuItemBluetooth);
+  if (s_bluetooth_data) {
+    settings_bluetooth_update_remotes(s_bluetooth_data);
+    prv_update_pairability(s_bluetooth_data);
+  } else {
+    settings_menu_reload_data(SettingsMenuItemBluetooth);
+  }
 }
 
 static void prv_expand_cb(SettingsCallbacks *context) {
   SettingsBluetoothData *data = (SettingsBluetoothData *) context;
+  s_bluetooth_data = data;
 
   settings_bluetooth_update_remotes(data);
 
@@ -556,14 +556,8 @@ static void prv_expand_cb(SettingsCallbacks *context) {
   event_service_client_subscribe(&data->bt_pairing_event_info);
   event_service_client_subscribe(&data->ble_device_name_updated_event_info);
   
-  // Enable pairing/advertising if paired devices < max_phones setting
-  const unsigned int num_remotes = list_count(data->remote_list_head);
-  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
   data->did_enable_pairability = false;
-  if (num_remotes < max_phones) {
-    bt_pairability_use();
-    data->did_enable_pairability = true;
-  }
+  prv_update_pairability(data);
   
   // Reload & redraw after pairing popup
   app_focus_service_subscribe_handlers((AppFocusHandlers) { .did_focus = prv_focus_handler });
@@ -578,7 +572,9 @@ static void prv_hide_cb(SettingsCallbacks *context) {
   // Only release pairability if we enabled it
   if (data->did_enable_pairability) {
     bt_pairability_release();
+    data->did_enable_pairability = false;
   }
+  s_bluetooth_data = NULL;
   
 #ifdef CONFIG_HRM
   event_service_client_unsubscribe(&data->ble_hrm_sharing_event_info);
@@ -592,6 +588,7 @@ static void prv_hide_cb(SettingsCallbacks *context) {
 
 static void prv_deinit_cb(SettingsCallbacks *context) {
   SettingsBluetoothData *data = (SettingsBluetoothData *) context;
+  s_bluetooth_data = NULL;
 
   i18n_free_all(data);
 
