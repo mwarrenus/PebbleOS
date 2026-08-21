@@ -433,14 +433,10 @@ static void prv_handle_connection_event(const PebbleBLEConnectionEvent *event) {
     // at a time. In the future, we should refactor ANCS and AMS to support multiple
     // instances to fully support two iPhones simultaneously.
 #if defined(CONFIG_BT_ANCS_CLIENT)
-    if (gap_le_connect_num_slave_connections() <= 1) {
-      ancs_create();
-    }
+    ancs_create();
 #endif
 #if defined(CONFIG_BT_AMS_CLIENT)
-    if (gap_le_connect_num_slave_connections() <= 1) {
-      ams_create();
-    }
+    ams_create();
 #endif
     ppogatt_create();
 
@@ -462,6 +458,13 @@ static void prv_handle_connection_event(const PebbleBLEConnectionEvent *event) {
       ancs_destroy();
 #endif
       app_launch_handle_disconnection();
+    } else {
+#if defined(CONFIG_BT_ANCS_CLIENT)
+      ancs_invalidate_all_references();
+#endif
+#if defined(CONFIG_BT_AMS_CLIENT)
+      ams_invalidate_all_references();
+#endif
     }
     gap_le_slave_reconnect_start();
     gatt_client_op_cleanup(GAPLEClientKernel);

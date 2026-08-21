@@ -951,11 +951,16 @@ static void prv_put_ancs_disconnected_event(void) {
 // Catching the subscription (CCCD write) confirmation for analytics purposes:
 void ancs_handle_subscribe(BLECharacteristic subscribed_characteristic,
                            BLESubscription subscription_type, BLEGATTError error) {
+  if (!s_ancs_client) {
+    return;
+  }
   ANCSCharacteristic characteristic_id = prv_get_id_for_characteristic(subscribed_characteristic);
   if (characteristic_id != ANCSCharacteristicNotification &&
       characteristic_id != ANCSCharacteristicData) {
     // Only Notification and Data characteristics are expected to be subscribed to
-    WTF;
+    PBL_LOG_WRN("Unexpected ANCS subscription confirmation for charx %u (id=%d)",
+                (unsigned int)subscribed_characteristic, characteristic_id);
+    return;
   }
 
   if (error == BLEGATTErrorSuccess) {
@@ -971,6 +976,9 @@ void ancs_handle_subscribe(BLECharacteristic subscribed_characteristic,
 }
 
 void ancs_invalidate_all_references(void) {
+  if (!s_ancs_client) {
+    return;
+  }
   for (int c = 0; c < NumANCSCharacteristic; c++) {
     s_ancs_client->characteristics[c] = BLE_CHARACTERISTIC_INVALID;
   }
@@ -985,6 +993,9 @@ void ancs_handle_service_removed(BLECharacteristic *characteristics, uint8_t num
 }
 
 void ancs_handle_service_discovered(BLECharacteristic *characteristics) {
+  if (!s_ancs_client) {
+    return;
+  }
   PBL_LOG_DBG("In ANCS service discovery CB");
   PBL_ASSERTN(characteristics); // should only be called if we found something!
 
@@ -1119,6 +1130,9 @@ static void prv_handle_ds_notification(uint32_t length, const uint8_t *data) {
 
 void ancs_handle_read_or_notification(BLECharacteristic characteristic, const uint8_t *value,
                                       size_t value_length, BLEGATTError error) {
+  if (!s_ancs_client) {
+    return;
+  }
   if (error != BLEGATTErrorSuccess) {
     PBL_LOG_ERR("Read or notification error: %d", error);
     prv_reset_due_to_bt_error();
@@ -1135,7 +1149,9 @@ void ancs_handle_read_or_notification(BLECharacteristic characteristic, const ui
       handler = prv_handle_ds_notification;
       break;
     default:
-      WTF;
+      PBL_LOG_WRN("Received ANCS notification for unexpected charx %u (id=%d)",
+                  (unsigned int)characteristic, characteristic_id);
+      return;
   }
   handler(value_length, value);
 }
@@ -1144,6 +1160,9 @@ void ancs_handle_read_or_notification(BLECharacteristic characteristic, const ui
 // Writing commands to the ANCS Control Point
 
 void ancs_handle_write_response(BLECharacteristic characteristic, BLEGATTError error) {
+  if (!s_ancs_client) {
+    return;
+  }
   if (error == ANCS_INVALID_PARAM) {
     if (s_ancs_client->state == ANCSClientStateAliveCheck) {
       // We got a response so cancel the response wait timer and setup another check.
@@ -1240,8 +1259,9 @@ void ancs_perform_action(uint32_t notification_uid, uint8_t action_id) {
 }
 
 void ancs_handle_ios9_or_newer_detected(void) {
-  // The ANCSClient is created as soon as the gateway is connected (see kernel_le_client.c).
-  PBL_ASSERTN(s_ancs_client);
+  if (!s_ancs_client) {
+    return;
+  }
   s_ancs_client->version = ANCSVersion_iOS9OrNewer;
 }
 
@@ -1249,7 +1269,9 @@ void ancs_handle_ios9_or_newer_detected(void) {
 // Lifecyle
 
 void ancs_create(void) {
-  PBL_ASSERTN(s_ancs_client == NULL);
+  if (s_ancs_client != NULL) {
+    return;
+  }
   s_ancs_client = (ANCSClient *) kernel_zalloc_check(sizeof(ANCSClient));
   buffer_init(&s_ancs_client->reassembly_ctx.buffer,
               sizeof(s_ancs_client->reassembly_ctx.buffer_storage));

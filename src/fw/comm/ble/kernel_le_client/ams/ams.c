@@ -533,11 +533,16 @@ static void prv_handle_update(const AMSEntityUpdateNotification *update,
 // Interface towards kernel_le_client.c
 
 void ams_create(void) {
-  PBL_ASSERTN(!s_ams_client);
+  if (s_ams_client != NULL) {
+    return;
+  }
   s_ams_client = (AMSClient *) kernel_zalloc_check(sizeof(AMSClient));
 }
 
 void ams_invalidate_all_references(void) {
+  if (!s_ams_client) {
+    return;
+  }
   // We've gotten new characteristic references,
   // this means the old ones will have been unsubscribed, so we're disconnected from AMS:
   prv_set_connected(false);
@@ -599,10 +604,15 @@ bool ams_can_handle_characteristic(BLECharacteristic characteristic) {
 
 void ams_handle_subscribe(BLECharacteristic subscribed_characteristic,
                           BLESubscription subscription_type, BLEGATTError error) {
+  if (!s_ams_client) {
+    return;
+  }
   AMSCharacteristic characteristic_id = prv_get_id_for_characteristic(subscribed_characteristic);
   if (characteristic_id != AMSCharacteristicEntityUpdate) {
     // Only Entity Update characteristic is expected to be subscribed to
-    WTF;
+    PBL_LOG_WRN("Unexpected AMS subscription confirmation for charx %u (id=%d)",
+                (unsigned int)subscribed_characteristic, characteristic_id);
+    return;
   }
 
   if (error != BLEGATTErrorSuccess) {
