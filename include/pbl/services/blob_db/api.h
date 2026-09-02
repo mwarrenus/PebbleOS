@@ -194,3 +194,11 @@ BlobDBDirtyItem *blob_db_get_dirty_list(BlobDBId db_id);
 //! \param key_len the lenght of the key, in bytes
 //! \see BlobDBMarkSyncedImpl
 status_t blob_db_mark_synced(BlobDBId db_id, uint8_t *key, int key_len);
+
+struct CommSession;
+
+//! Set the active CommSession for the current BlobDB operation
+void blob_db_set_active_session(struct CommSession *session);
+
+//! Get the active CommSession for the current BlobDB operation
+struct CommSession *blob_db_get_active_session(void);

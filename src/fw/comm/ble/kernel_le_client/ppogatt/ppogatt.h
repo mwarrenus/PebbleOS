@@ -6,6 +6,7 @@
 #include "applib/bluetooth/ble_client.h"
 
 struct Transport;
+typedef struct CommSession CommSession;
 
 typedef enum {
   PPoGATTCharacteristicData,
@@ -46,3 +47,6 @@ void ppogatt_destroy(void);
 
 //! Interface for analytics
 void ppogatt_reset_disconnect_counter(void);
+
+//! Returns the bonding ID associated with the given CommSession, or BT_BONDING_ID_INVALID
+BTBondingID ppogatt_get_bonding_id_for_session(const CommSession *session);

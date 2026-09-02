@@ -3,7 +3,9 @@
 
 #include "pbl/services/phone_pp.h"
 
+#include "comm/ble/kernel_le_client/ppogatt/ppogatt.h"
 #include "kernel/events.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/phone_call.h"
 #include "pbl/services/phone_call_util.h"
@@ -14,6 +16,7 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -140,7 +143,7 @@ void pp_get_phone_state_set_enabled(bool enabled) {
   s_get_phone_state_enabled = enabled;
 }
 
-static bool prv_parse_msg_to_event(const uint8_t *iter, size_t length,
+static bool prv_parse_msg_to_event(CommSession *session, const uint8_t *iter, size_t length,
                                    PebbleEvent *event_out, bool is_state_response) {
   uint8_t msg_type = *iter++;
   --length;
@@ -167,7 +170,22 @@ static bool prv_parse_msg_to_event(const uint8_t *iter, size_t length,
       }
 
       type = PhoneEventType_Incoming;
-      caller = phone_call_util_create_caller(call_info.caller_number, call_info.caller_name);
+      BTBondingID bonding = ppogatt_get_bonding_id_for_session(session);
+      const char *prefix = bt_persistent_storage_get_connection_marker_prefix(bonding);
+      char caller_num_buf[64];
+      char caller_name_buf[64];
+      const char *num = call_info.caller_number;
+      const char *name = call_info.caller_name;
+      if (prefix && prefix[0] != '\0') {
+        if (name && name[0] != '\0') {
+          snprintf(caller_name_buf, sizeof(caller_name_buf), "%s%s", prefix, name);
+          name = caller_name_buf;
+        } else if (num && num[0] != '\0') {
+          snprintf(caller_num_buf, sizeof(caller_num_buf), "%s%s", prefix, num);
+          num = caller_num_buf;
+        }
+      }
+      caller = phone_call_util_create_caller(num, name);
       did_parse = true;
       break;
     }
@@ -220,10 +238,10 @@ static bool prv_parse_msg_to_event(const uint8_t *iter, size_t length,
   return did_parse;
 }
 
-static void prv_parse_msg_and_emit_event(const uint8_t *msg, size_t length,
+static void prv_parse_msg_and_emit_event(CommSession *session, const uint8_t *msg, size_t length,
                                          bool is_state_response) {
   PebbleEvent e;
-  if (prv_parse_msg_to_event(msg, length, &e, is_state_response)) {
+  if (prv_parse_msg_to_event(session, msg, length, &e, is_state_response)) {
     event_put(&e);
   }
 }
@@ -251,7 +269,7 @@ void phone_protocol_msg_callback(CommSession *session, const uint8_t* iter, size
         PBL_LOG_ERR("Malformed message");
         break;
       }
-      prv_parse_msg_and_emit_event(iter, item_length, true /* is_state_response */);
+      prv_parse_msg_and_emit_event(session, iter, item_length, true /* is_state_response */);
       iter += item_length;
       length -= item_length;
     }
@@ -260,6 +278,6 @@ void phone_protocol_msg_callback(CommSession *session, const uint8_t* iter, size
       prv_put_call_end_event();
     }
   } else {
-    prv_parse_msg_and_emit_event(iter, length, false /* is_state_response */);
+    prv_parse_msg_and_emit_event(session, iter, length, false /* is_state_response */);
   }
 }

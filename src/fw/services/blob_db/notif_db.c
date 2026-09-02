@@ -3,9 +3,15 @@
 
 #include "pbl/services/blob_db/notif_db.h"
 
+#include "comm/ble/kernel_le_client/ppogatt/ppogatt.h"
 #include "kernel/pbl_malloc.h"
+#include "pbl/services/blob_db/api.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/notifications/notification_storage.h"
 #include <pbl/logging/logging.h>
+
+#include <stdio.h>
+#include <string.h>
 
 PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
@@ -43,6 +49,20 @@ status_t notif_db_insert(const uint8_t *key, int key_len, const uint8_t *val, in
     PBL_LOG_INFO("Notification modified: %s", uuid_string);
     notifications_handle_notification_acted_upon(id);
   } else if (!has_status_bits) {
+    CommSession *session = blob_db_get_active_session();
+    BTBondingID bonding = ppogatt_get_bonding_id_for_session(session);
+    const char *prefix = bt_persistent_storage_get_connection_marker_prefix(bonding);
+    Attribute *app_name_attr = attribute_find(&notification.attr_list, AttributeIdAppName);
+    Attribute *title_attr = attribute_find(&notification.attr_list, AttributeIdTitle);
+    Attribute *target_attr = app_name_attr ? app_name_attr : title_attr;
+    char marked_buf[ATTRIBUTE_TITLE_MAX_LEN + 8];
+    if (target_attr && target_attr->cstring && prefix && prefix[0] != '\0') {
+      if (strncmp(target_attr->cstring, "(1) ", 4) != 0 &&
+          strncmp(target_attr->cstring, "(2) ", 4) != 0) {
+        snprintf(marked_buf, sizeof(marked_buf), "%s%s", prefix, target_attr->cstring);
+        target_attr->cstring = marked_buf;
+      }
+    }
     notification_storage_store(&notification);
     PBL_LOG_INFO("Notification added: %s", uuid_string);
     notifications_handle_notification_added(id);

@@ -1136,6 +1136,44 @@ void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, vo
   prv_file_each(prv_ble_pairing_internal_for_each_itr, &internal_itr_data);
 }
 
+typedef struct {
+  BTBondingID target_id;
+  int current_idx;
+  int found_idx;
+} FindBlePairingIndexData;
+
+static void prv_find_ble_pairing_index_cb(BTDeviceInternal *device, SMIdentityResolvingKey *irk,
+                                          const char *name, BTBondingID *id, void *context) {
+  FindBlePairingIndexData *data = (FindBlePairingIndexData *)context;
+  if (*id == data->target_id) {
+    data->found_idx = data->current_idx;
+  }
+  data->current_idx++;
+}
+
+int bt_persistent_storage_get_ble_pairing_index_by_id(BTBondingID bonding_id) {
+  if (bonding_id == BT_BONDING_ID_INVALID) {
+    return -1;
+  }
+  FindBlePairingIndexData data = {
+    .target_id = bonding_id,
+    .current_idx = 0,
+    .found_idx = -1,
+  };
+  bt_persistent_storage_for_each_ble_pairing(prv_find_ble_pairing_index_cb, &data);
+  return data.found_idx;
+}
+
+const char *bt_persistent_storage_get_connection_marker_prefix(BTBondingID bonding_id) {
+  const int idx = bt_persistent_storage_get_ble_pairing_index_by_id(bonding_id);
+  if (idx == 0) {
+    return "(1) ";
+  } else if (idx == 1) {
+    return "(2) ";
+  }
+  return "";
+}
+
 static void prv_register_bondings_for_each_ble_cb(BTBondingID key,
                                                   BtPersistBondingData *stored_data,
                                                   void *context) {

@@ -11,6 +11,7 @@
 // Stubs
 ////////////////////////////////////////////////////////////////
 #include "stubs_analytics.h"
+#include "stubs_bluetooth_persistent_storage.h"
 #include "stubs_i18n.h"
 #include "stubs_layout_layer.h"
 #include "stubs_logging.h"

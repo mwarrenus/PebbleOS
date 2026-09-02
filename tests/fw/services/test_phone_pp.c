@@ -14,6 +14,7 @@
 #include "fake_system_task.h"
 
 #include "stubs_bt_lock.h"
+#include "stubs_bluetooth_persistent_storage.h"
 #include "stubs_passert.h"
 #include "stubs_pbl_malloc.h"
 #include "stubs_hexdump.h"
@@ -21,6 +22,10 @@
 #include "stubs_logging.h"
 #include "stubs_mutex.h"
 #include "stubs_i18n.h"
+
+BTBondingID ppogatt_get_bonding_id_for_session(const CommSession *session) {
+  return BT_BONDING_ID_INVALID;
+}
 
 extern void phone_protocol_msg_callback(CommSession *session, const uint8_t* iter, size_t length);
 

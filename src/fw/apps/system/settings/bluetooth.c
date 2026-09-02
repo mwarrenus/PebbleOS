@@ -351,12 +351,17 @@ static void draw_stored_remote_item(GContext *ctx, const Layer *cell_layer,
 
   // Add ellipsis if the name might have been cut off by the mobile
   const char ellipsis[] = UTF8_ELLIPSIS_STRING;
+  const char *prefix = bt_persistent_storage_get_connection_marker_prefix(remote->ble.bonding);
+  if (!prefix || prefix[0] == '\0') {
+    prefix = (device_index == 0) ? "(1) " : ((device_index == 1) ? "(2) " : "");
+  }
+  const size_t prefix_len = strlen(prefix);
   const size_t max_name_size = BT_DEVICE_NAME_BUFFER_SIZE - 2;
   const size_t name_size = strnlen(remote->name, BT_DEVICE_NAME_BUFFER_SIZE);
-  char *remote_name = task_zalloc_check(max_name_size + sizeof(ellipsis));
-  strncpy(remote_name, remote->name, name_size);
+  char *remote_name = task_zalloc_check(prefix_len + max_name_size + sizeof(ellipsis));
+  snprintf(remote_name, prefix_len + max_name_size + sizeof(ellipsis), "%s%s", prefix, remote->name);
   if (name_size > max_name_size) {
-    const size_t ellipsis_start_offset = utf8_get_size_truncate(remote_name, name_size);
+    const size_t ellipsis_start_offset = utf8_get_size_truncate(remote_name, prefix_len + name_size);
     strncpy(&remote_name[ellipsis_start_offset], ellipsis, sizeof(ellipsis));
   }
 

@@ -84,6 +84,12 @@ bool bt_persistent_storage_has_active_ble_gateway_bonding(void);
 //! The callback is NOT allowed to aquire the bt_lock() (or we could deadlock).
 void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, void *context);
 
+//! Returns the 0-based index of the BLE pairing in storage order, or -1 if not found
+int bt_persistent_storage_get_ble_pairing_index_by_id(BTBondingID bonding_id);
+
+//! Returns "(1) ", "(2) ", or "" based on the pairing's storage slot
+const char *bt_persistent_storage_get_connection_marker_prefix(BTBondingID bonding_id);
+
 //! Registers all the existing BLE bondings with the BT driver lib.
 void bt_persistent_storage_register_existing_ble_bondings(void);
 

@@ -1819,3 +1819,24 @@ void ppogatt_trigger_rx_ack_send_timeout(void) {
     client = (PPoGATTClient *) client->node.next;
   }
 }
+
+BTBondingID ppogatt_get_bonding_id_for_session(const CommSession *session) {
+  if (!session) {
+    return BT_BONDING_ID_INVALID;
+  }
+  bt_lock();
+  PPoGATTClient *client = s_ppogatt_head;
+  while (client) {
+    if (client->session == session) {
+      GAPLEConnection *conn = (client->role == PPoGATTRoleReversed) ?
+                              client->rev.connection :
+                              gatt_client_characteristic_get_connection(client->characteristics.data);
+      BTBondingID bonding = conn ? conn->bonding_id : BT_BONDING_ID_INVALID;
+      bt_unlock();
+      return bonding;
+    }
+    client = (PPoGATTClient *)client->node.next;
+  }
+  bt_unlock();
+  return BT_BONDING_ID_INVALID;
+}

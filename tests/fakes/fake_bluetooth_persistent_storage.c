@@ -105,3 +105,34 @@ bool bt_persistent_storage_get_root_key(SMRootKeyType key_type, SM128BitKey *key
 void bt_persistent_storage_set_root_keys(SM128BitKey *keys_in) {
   return;
 }
+
+void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, void *context) {
+  FakeBonding *bonding = s_head;
+  while (bonding) {
+    cb(&bonding->device, &bonding->irk, bonding->name, &bonding->id, context);
+    bonding = (FakeBonding *)bonding->node.next;
+  }
+}
+
+int bt_persistent_storage_get_ble_pairing_index_by_id(BTBondingID bonding_id) {
+  int idx = 0;
+  FakeBonding *bonding = s_head;
+  while (bonding) {
+    if (bonding->id == bonding_id) {
+      return idx;
+    }
+    idx++;
+    bonding = (FakeBonding *)bonding->node.next;
+  }
+  return -1;
+}
+
+const char *bt_persistent_storage_get_connection_marker_prefix(BTBondingID bonding_id) {
+  int idx = bt_persistent_storage_get_ble_pairing_index_by_id(bonding_id);
+  if (idx == 0) {
+    return "(1) ";
+  } else if (idx == 1) {
+    return "(2) ";
+  }
+  return "";
+}

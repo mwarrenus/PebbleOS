@@ -112,6 +112,10 @@ void gatt_client_op_cleanup(GAPLEClient client) {
 void ppogatt_reset_disconnect_counter(void) {
 }
 
+BTBondingID ppogatt_get_bonding_id_for_session(const CommSession *session) {
+  return BT_BONDING_ID_INVALID;
+}
+
 // Fakes & Helpers
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

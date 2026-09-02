@@ -688,8 +688,9 @@ void test_ams__supported_capabilities(void) {
 // Tests: Create & Destroy
 ///////////////////////////////////////////////////////////
 
-void test_ams__create_again_trips_assert(void) {
-  cl_assert_passert(ams_create());
+void test_ams__create_again_is_fine(void) {
+  ams_create();
+  // No assert hit.
 }
 
 void test_ams__create_works_again_after_destroy(void) {

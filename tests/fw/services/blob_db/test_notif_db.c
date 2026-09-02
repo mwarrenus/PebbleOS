@@ -20,6 +20,7 @@
 // Stubs
 ////////////////////////////////////////////////////////////////
 #include "stubs_analytics.h"
+#include "stubs_bluetooth_persistent_storage.h"
 #include "stubs_hexdump.h"
 #include "stubs_layout_layer.h"
 #include "stubs_logging.h"
@@ -30,6 +31,14 @@
 #include "stubs_rand_ptr.h"
 #include "stubs_sleep.h"
 #include "stubs_task_watchdog.h"
+
+CommSession *blob_db_get_active_session(void) {
+  return NULL;
+}
+
+BTBondingID ppogatt_get_bonding_id_for_session(const CommSession *session) {
+  return BT_BONDING_ID_INVALID;
+}
 
 void test_notif_db__initialize(void) {
   fake_spi_flash_init(0, 0x1000000);

@@ -19,6 +19,7 @@
 ///////////////////////////////////////////////////////////
 
 #include "stubs_analytics.h"
+#include "stubs_bluetooth_persistent_storage.h"
 #include "stubs_ios_notif_pref_db.h"
 #include "stubs_bt_stack.h"
 #include "stubs_ble.h"

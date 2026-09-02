@@ -8,6 +8,7 @@
 #include "applib/graphics/utf8.h"
 #include "kernel/pbl_malloc.h"
 #include "resource/resource_storage_impl.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/i18n/i18n.h"
 #include <pbl/logging/logging.h>
 #include "pbl/services/timeline/timeline_resources.h"
@@ -70,6 +71,18 @@ static uint8_t *prv_add_pstring_to_attribute(uint8_t *buffer, const ANCSAttribut
   attribute_init_string(attribute, (char *)buffer, attribute_id);
   return (uint8_t *)prv_copy_pstring_and_add_ellipsis(&ancs_attr->pstr, (char *)buffer,
                                                       (ancs_attr->length == max_length));
+}
+
+static uint8_t *prv_add_pstring_with_prefix_to_attribute(
+    uint8_t *buffer, const char *prefix, const ANCSAttribute *ancs_attr,
+    int max_length, Attribute *attribute, AttributeId attribute_id) {
+  attribute_init_string(attribute, (char *)buffer, attribute_id);
+  size_t prefix_len = prefix ? strlen(prefix) : 0;
+  if (prefix_len > 0) {
+    memcpy(buffer, prefix, prefix_len);
+  }
+  return (uint8_t *)prv_copy_pstring_and_add_ellipsis(
+      &ancs_attr->pstr, (char *)buffer + prefix_len, (ancs_attr->length == max_length));
 }
 
 static uint8_t *prv_add_action_msg_to_attribute(
@@ -187,6 +200,7 @@ static uint8_t *prv_fill_pebble_ancs_action(uint8_t **buffer,
 
 static void prv_populate_attributes(TimelineItem *item,
                                     uint8_t **buffer,
+                                    const char *prefix,
                                     const ANCSAttribute *title,
                                     const ANCSAttribute *display_name,
                                     const ANCSAttribute *subtitle,
@@ -219,15 +233,24 @@ static void prv_populate_attributes(TimelineItem *item,
   }
 
   if (title && title->length > 0) {
-    *buffer = prv_add_pstring_to_attribute(*buffer, title, TITLE_MAX_LENGTH,
-                                           &item->attr_list.attributes[attr_idx],
-                                           AttributeIdTitle);
+    const char *title_prefix = (display_name && display_name->length > 0) ? NULL : prefix;
+    if (title_prefix) {
+      *buffer = prv_add_pstring_with_prefix_to_attribute(*buffer, title_prefix, title,
+                                                         TITLE_MAX_LENGTH,
+                                                         &item->attr_list.attributes[attr_idx],
+                                                         AttributeIdTitle);
+    } else {
+      *buffer = prv_add_pstring_to_attribute(*buffer, title, TITLE_MAX_LENGTH,
+                                             &item->attr_list.attributes[attr_idx],
+                                             AttributeIdTitle);
+    }
     attr_idx++;
   }
   if (display_name && display_name->length > 0) {
-    *buffer = prv_add_pstring_to_attribute(*buffer, display_name, TITLE_MAX_LENGTH,
-                                           &item->attr_list.attributes[attr_idx],
-                                           AttributeIdAppName);
+    *buffer = prv_add_pstring_with_prefix_to_attribute(*buffer, prefix, display_name,
+                                                       TITLE_MAX_LENGTH,
+                                                       &item->attr_list.attributes[attr_idx],
+                                                       AttributeIdAppName);
     attr_idx++;
   }
   if (subtitle && subtitle->length > 0) {
@@ -403,6 +426,18 @@ TimelineItem *ancs_item_create_and_populate(ANCSAttribute *notif_attributes[],
 
   size_t required_space_for_strings = 0;
 
+  BTBondingID bonding = bt_persistent_storage_get_ble_ancs_bonding();
+  const char *prefix = bt_persistent_storage_get_connection_marker_prefix(bonding);
+  const size_t prefix_len = prefix ? strlen(prefix) : 0;
+
+  if (prefix_len > 0) {
+    if (display_name && display_name->length > 0) {
+      required_space_for_strings += prefix_len;
+    } else if (title && title->length > 0) {
+      required_space_for_strings += prefix_len;
+    }
+  }
+
   required_space_for_strings += prv_max_ellipsified_cstring_size(title);
   required_space_for_strings += prv_max_ellipsified_cstring_size(display_name);
   required_space_for_strings += prv_max_ellipsified_cstring_size(subtitle);
@@ -503,7 +538,7 @@ TimelineItem *ancs_item_create_and_populate(ANCSAttribute *notif_attributes[],
 
   item->header.timestamp = timestamp;
 
-  prv_populate_attributes(item, &buffer, title, display_name, subtitle, message, app_id,
+  prv_populate_attributes(item, &buffer, prefix, title, display_name, subtitle, message, app_id,
                           app_metadata, notif_prefs, has_multimedia);
 
   uint8_t *buf_end = buffer + required_space_for_strings;

@@ -214,6 +214,14 @@ void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, vo
   return;
 }
 
+int bt_persistent_storage_get_ble_pairing_index_by_id(BTBondingID bonding_id) {
+  return (bonding_id == BLE_BONDING_ID) ? 0 : -1;
+}
+
+const char *bt_persistent_storage_get_connection_marker_prefix(BTBondingID bonding_id) {
+  return "";
+}
+
 void bt_persistent_storage_register_existing_ble_bondings(void) {
   BleBonding bonding = {};
   uint8_t flags;

@@ -344,3 +344,13 @@ status_t blob_db_mark_synced(BlobDBId db_id, uint8_t *key, int key_len) {
 
   return E_INVALID_OPERATION;
 }
+
+static CommSession *s_active_blob_db_session;
+
+void blob_db_set_active_session(CommSession *session) {
+  s_active_blob_db_session = session;
+}
+
+CommSession *blob_db_get_active_session(void) {
+  return s_active_blob_db_session;
+}

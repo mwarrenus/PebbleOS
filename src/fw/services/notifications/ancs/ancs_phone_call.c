@@ -5,11 +5,13 @@
 
 #include "applib/graphics/utf8.h"
 #include "kernel/events.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/phone_call_util.h"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 static RegularTimerInfo s_missed_call_timer_id;
@@ -61,7 +63,16 @@ void ancs_phone_call_handle_incoming(uint32_t uid, ANCSProperty properties,
   char caller_id_str[caller_id->length + 1];
   pstring_pstring16_to_string(&caller_id->pstr, caller_id_str);
   prv_strip_formatting_chars(caller_id_str);
-  PebblePhoneCaller *caller = phone_call_util_create_caller(caller_id_str, NULL);
+
+  BTBondingID bonding = bt_persistent_storage_get_ble_ancs_bonding();
+  const char *prefix = bt_persistent_storage_get_connection_marker_prefix(bonding);
+  char marked_caller_str[sizeof(caller_id_str) + 8];
+  const char *final_caller_str = caller_id_str;
+  if (prefix && prefix[0] != '\0') {
+    snprintf(marked_caller_str, sizeof(marked_caller_str), "%s%s", prefix, caller_id_str);
+    final_caller_str = marked_caller_str;
+  }
+  PebblePhoneCaller *caller = phone_call_util_create_caller(final_caller_str, NULL);
 
   const bool ios_9 = (properties & ANCSProperty_iOS9);
 

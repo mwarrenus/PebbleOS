@@ -183,7 +183,9 @@ static void prv_handle_database_insert(CommSession *session, const uint8_t *data
   }
 
   // perform action on database and return result
+  blob_db_set_active_session(session);
   status_t ret = blob_db_insert(db_id, key_bytes, key_size, value_bytes, value_size);
+  blob_db_set_active_session(NULL);
   prv_send_response(session, token, prv_interpret_db_ret_val(ret));
 }
 
@@ -233,7 +235,9 @@ static void prv_handle_database_insert_with_timestamp(CommSession *session, cons
   // Only Settings BlobDB supports timestamped insert
   if (db_id != BlobDBIdSettings) {
     // Fall back to regular insert for other databases
+    blob_db_set_active_session(session);
     status_t ret = blob_db_insert(db_id, key_bytes, key_size, value_bytes, value_size);
+    blob_db_set_active_session(NULL);
     prv_send_response(session, token, prv_interpret_db_ret_val(ret));
     return;
   }
