@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 
 from pbl.command import PblCommand
 
@@ -68,6 +69,7 @@ class Configure(PblCommand):
                 self.topdir,
                 "-G",
                 args.generator,
+                f"-DPython3_EXECUTABLE={sys.executable}",
                 f"-DBOARD={args.board}",
                 f"-DVARIANT={args.variant}",
             ]

@@ -159,6 +159,10 @@ class Workspace:
         if self.topdir not in sys.path:
             sys.path.insert(0, self.topdir)
 
+        venv_bin = os.path.dirname(sys.executable)
+        if venv_bin and venv_bin not in os.environ.get("PATH", "").split(os.pathsep):
+            os.environ["PATH"] = venv_bin + os.path.pathsep + os.environ.get("PATH", "")
+
         try:
             from tools.pebble_sdk_locator import activate_sdk
         except ImportError:

@@ -56,6 +56,7 @@ class Test(PblCommand):
                 os.path.join(self.topdir, "tests"),
                 "-G",
                 args.generator,
+                f"-DPython3_EXECUTABLE={sys.executable}",
                 "-DPBL_TEST_COVERAGE=" + ("ON" if args.coverage else "OFF"),
                 "-DPBL_TEST_IMAGES=" + ("OFF" if args.no_images else "ON"),
             ]
