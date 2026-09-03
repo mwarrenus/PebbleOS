@@ -399,7 +399,7 @@ static void prv_send_test_notification(uint8_t phone_idx, const char *title, con
   attribute_list_destroy_list(&dismiss_attr);
   if (item) {
     item->header.phone_idx = phone_idx;
-    item->header.ancs_notif = (phone_idx == 2);
+    item->header.ancs_notif = (phone_idx == 1);
     notifications_add_notification(item);
     timeline_item_destroy(item);
   }
@@ -541,11 +541,11 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     return;
   }
   if (row == num_remotes + 2 && bt_persistent_storage_get_max_phones() > 1) {
-    prv_send_test_notification(1, "Android (Phone 1)", "Message received from Android device.");
+    prv_send_test_notification(0, "Android (Phone 1)", "Message received from Android device.");
     return;
   }
   if (row == num_remotes + 3 && bt_persistent_storage_get_max_phones() > 1) {
-    prv_send_test_notification(2, "iPhone (Phone 2)", "Message received from iPhone device.");
+    prv_send_test_notification(1, "iPhone (Phone 2)", "Message received from iPhone device.");
     return;
   }
 }

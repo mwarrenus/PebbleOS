@@ -15,6 +15,7 @@
 #include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/notifications/notification_image.h"
+#include "pbl/services/notifications/notifications.h"
 #include "pbl/services/timeline/timeline_resources.h"
 #include "shell/system_theme.h"
 #include "pbl/util/math.h"
@@ -591,9 +592,9 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
     static const GRect banner_box = { .size = { DISP_COLS, LAYOUT_BANNER_HEIGHT_RECT } };
     graphics_fill_rect(ctx, &banner_box);
 
-    const uint8_t phone_idx = timeline_item_get_phone_idx(layout->info.item);
-    if (phone_idx == 1 || phone_idx == 2) {
-      const char num_str[2] = { (char)('0' + phone_idx), '\0' };
+    if (notifications_are_multi_phone_indicators_enabled()) {
+      const uint8_t phone_idx = timeline_item_get_phone_idx(layout->info.item);
+      const char num_str[2] = { (char)('1' + phone_idx), '\0' };
       GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
       const GRect num_box = GRect(DISP_COLS - 16, (LAYOUT_BANNER_HEIGHT_RECT - 14) / 2, 12, 14);
       graphics_context_set_text_color(ctx, colors->primary_color);

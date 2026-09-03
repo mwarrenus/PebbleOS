@@ -23,6 +23,7 @@
 #include "stubs_layout_node.h"
 #include "stubs_logging.h"
 #include "stubs_notification_image.h"
+#include "stubs_notifications.h"
 #include "stubs_passert.h"
 #include "stubs_pbl_malloc.h"
 #include "stubs_pin_db.h"

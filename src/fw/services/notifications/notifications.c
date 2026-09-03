@@ -79,10 +79,21 @@ void notifications_init(void) {
   notification_storage_init();
 }
 
+#include "comm/ble/gap_le_connect.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
+
 void notifications_add_notification(TimelineItem *notification) {
   notification_storage_store(notification);
 
   Uuid *uuid = kernel_malloc_check(sizeof(Uuid));
   *uuid = notification->header.id;
   notifications_handle_notification_added(uuid);
+}
+
+bool notifications_are_multi_phone_indicators_enabled(void) {
+#if defined(CONFIG_QEMU)
+  return (bt_persistent_storage_get_max_phones() > 1);
+#else
+  return (gap_le_connect_num_slave_connections() > 1);
+#endif
 }

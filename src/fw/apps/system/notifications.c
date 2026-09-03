@@ -347,26 +347,28 @@ static void prv_draw_notification_cell_rect(GContext *ctx, const Layer *cell_lay
 
     draw_func(ctx, icon, icon_rect.origin);
 
-    const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
-    GColor indicator_color = is_highlighted ? GColorWhite : GColorBlack;
+    if (notifications_are_multi_phone_indicators_enabled()) {
+      const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+      GColor indicator_color = is_highlighted ? GColorWhite : GColorBlack;
 #if PBL_COLOR
-    if (!is_highlighted) {
-      indicator_color = GColorDarkGray;
-    }
+      if (!is_highlighted) {
+        indicator_color = GColorDarkGray;
+      }
 #endif
 
-    if (phone_idx == 1) {
-      GRect border_rect = grect_inset(icon_rect, GEdgeInsets(-2));
-      graphics_context_set_stroke_color(ctx, indicator_color);
-      graphics_draw_rect(ctx, &border_rect);
-    } else if (phone_idx == 2) {
-      graphics_context_set_fill_color(ctx, indicator_color);
-      const int16_t pip_x = MAX(1, icon_rect.origin.x - 3);
-      const int16_t pip_cy = icon_rect.origin.y + (icon_rect.size.h / 2);
-      const GRect pip1 = GRect(pip_x, pip_cy - 4, 2, 3);
-      const GRect pip2 = GRect(pip_x, pip_cy + 1, 2, 3);
-      graphics_fill_rect(ctx, &pip1);
-      graphics_fill_rect(ctx, &pip2);
+      if (phone_idx == 0) {
+        GRect border_rect = grect_inset(icon_rect, GEdgeInsets(-2));
+        graphics_context_set_stroke_color(ctx, indicator_color);
+        graphics_draw_rect(ctx, &border_rect);
+      } else if (phone_idx == 1) {
+        graphics_context_set_fill_color(ctx, indicator_color);
+        const int16_t pip_x = MAX(1, icon_rect.origin.x - 3);
+        const int16_t pip_cy = icon_rect.origin.y + (icon_rect.size.h / 2);
+        const GRect pip1 = GRect(pip_x, pip_cy - 4, 2, 3);
+        const GRect pip2 = GRect(pip_x, pip_cy + 1, 2, 3);
+        graphics_fill_rect(ctx, &pip1);
+        graphics_fill_rect(ctx, &pip2);
+      }
     }
   }
 

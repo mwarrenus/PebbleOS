@@ -42,4 +42,8 @@ uint32_t fake_kernel_services_notifications_acted_upon_count(void) {
   return s_acted_upon_count;
 }
 
+bool notifications_are_multi_phone_indicators_enabled(void) {
+  return false;
+}
+
 

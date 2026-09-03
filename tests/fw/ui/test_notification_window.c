@@ -51,6 +51,7 @@
 #include "stubs_menu_cell_layer.h"
 #include "stubs_modal_manager.h"
 #include "stubs_mutex.h"
+#include "stubs_notifications.h"
 #include "stubs_notification_storage.h"
 #include "stubs_passert.h"
 #include "stubs_pbl_malloc.h"

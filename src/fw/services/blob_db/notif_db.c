@@ -49,14 +49,10 @@ status_t notif_db_insert(const uint8_t *key, int key_len, const uint8_t *val, in
     PBL_LOG_INFO("Notification modified: %s", uuid_string);
     notifications_handle_notification_acted_upon(id);
   } else if (!has_status_bits) {
-    uint8_t phone_idx = 0;
-    if (bt_persistent_storage_get_max_phones() > 1) {
-      CommSession *session = blob_db_get_active_session();
-      BTBondingID bonding = ppogatt_get_bonding_id_for_session(session);
-      int idx = bt_persistent_storage_get_ble_pairing_index_by_id(bonding);
-      phone_idx = (idx >= 0) ? (idx + 1) : 1;
-    }
-    notification.header.phone_idx = phone_idx;
+    CommSession *session = blob_db_get_active_session();
+    BTBondingID bonding = ppogatt_get_bonding_id_for_session(session);
+    int idx = bt_persistent_storage_get_ble_pairing_index_by_id(bonding);
+    notification.header.phone_idx = (idx == 1) ? 1 : 0;
     notification_storage_store(&notification);
     PBL_LOG_INFO("Notification added: %s", uuid_string);
     notifications_handle_notification_added(id);

@@ -49,3 +49,6 @@ void notifications_migrate_timezone(const int new_tz_offset);
 //! Inserts a new notification into notification storage and notifies the system of the new item
 //! @param notification Pointer to the notification to add
 void notifications_add_notification(TimelineItem *notification);
+
+//! Returns true if visual indicators should be displayed for multi-phone disambiguation
+bool notifications_are_multi_phone_indicators_enabled(void);

@@ -1536,7 +1536,7 @@ static void prv_notif_test_phone(uint8_t phone_idx, const char *title, const cha
   attribute_list_destroy_list(&dismiss_attr);
   if (item) {
     item->header.phone_idx = phone_idx;
-    item->header.ancs_notif = (phone_idx == 2);
+    item->header.ancs_notif = (phone_idx == 1);
     notifications_add_notification(item);
     timeline_item_destroy(item);
   }
@@ -1546,17 +1546,17 @@ static void prv_notif_test_phone(uint8_t phone_idx, const char *title, const cha
 }
 
 void command_notif_test(void) {
-  prv_notif_test_phone(1, "Touch Test",
+  prv_notif_test_phone(0, "Touch Test",
       "Swipe up/down to scroll this body. Line 2. Line 3. Line 4. Line 5. Line 6. Line 7. Line 8. "
       "Line 9. Line 10. Line 11. Line 12. Line 13. Line 14. Swipe left=BACK, right=SELECT.");
 }
 
 void command_notif_test1(void) {
-  prv_notif_test_phone(1, "Android (Phone 1)", "Message received from Android device.");
+  prv_notif_test_phone(0, "Android (Phone 1)", "Message received from Android device.");
 }
 
 void command_notif_test2(void) {
-  prv_notif_test_phone(2, "iPhone (Phone 2)", "Message received from iPhone device.");
+  prv_notif_test_phone(1, "iPhone (Phone 2)", "Message received from iPhone device.");
 }
 #endif  // CONFIG_RECOVERY_FW
 

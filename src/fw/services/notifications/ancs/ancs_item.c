@@ -414,7 +414,7 @@ TimelineItem *ancs_item_create_and_populate(ANCSAttribute *notif_attributes[],
       bonding = bt_persistent_storage_get_ble_ancs_bonding();
     }
     int idx = bt_persistent_storage_get_ble_pairing_index_by_id(bonding);
-    phone_idx = (idx >= 0) ? (idx + 1) : 2;
+    phone_idx = (idx == 0) ? 0 : 1;
   }
 
   required_space_for_strings += prv_max_ellipsified_cstring_size(title);
