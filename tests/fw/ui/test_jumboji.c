@@ -15,6 +15,7 @@
 #include "stubs_analytics.h"
 #include "stubs_attribute.h"
 #include "stubs_clock.h"
+#include "stubs_fonts.h"
 #include "stubs_graphics.h"
 #include "stubs_graphics_context.h"
 #include "stubs_kino_layer.h"

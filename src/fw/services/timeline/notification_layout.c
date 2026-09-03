@@ -4,6 +4,7 @@
 #include "pbl/services/timeline/notification_jumboji_table.h"
 #include "pbl/services/timeline/notification_layout.h"
 
+#include "applib/fonts/fonts.h"
 #include "applib/graphics/gtypes.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/ui/kernel_ui.h"
@@ -589,6 +590,16 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
 #else
     static const GRect banner_box = { .size = { DISP_COLS, LAYOUT_BANNER_HEIGHT_RECT } };
     graphics_fill_rect(ctx, &banner_box);
+
+    const uint8_t phone_idx = timeline_item_get_phone_idx(layout->info.item);
+    if (phone_idx == 1 || phone_idx == 2) {
+      const char num_str[2] = { (char)('0' + phone_idx), '\0' };
+      GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+      const GRect num_box = GRect(DISP_COLS - 16, (LAYOUT_BANNER_HEIGHT_RECT - 14) / 2, 12, 14);
+      graphics_context_set_text_color(ctx, colors->primary_color);
+      graphics_draw_text(ctx, num_str, font, num_box, GTextOverflowModeFill,
+                         GTextAlignmentCenter, NULL);
+    }
 #endif
   }
 

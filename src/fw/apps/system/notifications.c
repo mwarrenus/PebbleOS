@@ -325,7 +325,7 @@ static void prv_draw_pdc_bw_inverted(GContext *ctx, GDrawCommandImage *image, GP
 #if PBL_RECT
 static void prv_draw_notification_cell_rect(GContext *ctx, const Layer *cell_layer,
                                             const char *title, const char *subtitle,
-                                            GDrawCommandImage *icon) {
+                                            GDrawCommandImage *icon, uint8_t phone_idx) {
   const GRect cell_layer_bounds = cell_layer->bounds;
   const GSize icon_size = gdraw_command_image_get_bounds_size(icon);
   const int16_t icon_left_margin = menu_cell_basic_horizontal_inset();
@@ -346,6 +346,28 @@ static void prv_draw_notification_cell_rect(GContext *ctx, const Layer *cell_lay
     grect_align(&icon_rect, &box, GAlignLeft, false /* clip */);
 
     draw_func(ctx, icon, icon_rect.origin);
+
+    const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+    GColor indicator_color = is_highlighted ? GColorWhite : GColorBlack;
+#if PBL_COLOR
+    if (!is_highlighted) {
+      indicator_color = GColorDarkGray;
+    }
+#endif
+
+    if (phone_idx == 1) {
+      GRect border_rect = grect_inset(icon_rect, GEdgeInsets(-2));
+      graphics_context_set_stroke_color(ctx, indicator_color);
+      graphics_draw_rect(ctx, &border_rect);
+    } else if (phone_idx == 2) {
+      graphics_context_set_fill_color(ctx, indicator_color);
+      const int16_t pip_x = MAX(1, icon_rect.origin.x - 3);
+      const int16_t pip_cy = icon_rect.origin.y + (icon_rect.size.h / 2);
+      const GRect pip1 = GRect(pip_x, pip_cy - 4, 2, 3);
+      const GRect pip2 = GRect(pip_x, pip_cy + 1, 2, 3);
+      graphics_fill_rect(ctx, &pip1);
+      graphics_fill_rect(ctx, &pip2);
+    }
   }
 
   // Temporarily inset the cell layer's bounds from the left so the text doesn't draw over any
@@ -424,7 +446,7 @@ void prv_draw_notification_cell_round(GContext *ctx, const Layer *cell_layer, GR
 #if PBL_ROUND
 static void prv_draw_notification_cell_round_selected(GContext *ctx, const Layer *cell_layer,
                                                       const char *title, const char *subtitle,
-                                                      GDrawCommandImage *icon) {
+                                                      GDrawCommandImage *icon, uint8_t phone_idx) {
   // as measured from the design specs
   const int inset = 8;
   GRect frame = cell_layer->bounds;
@@ -442,7 +464,7 @@ static void prv_draw_notification_cell_round_selected(GContext *ctx, const Layer
 
 static void prv_draw_notification_cell_round_unselected(GContext *ctx, const Layer *cell_layer,
                                                         const char *title, const char *subtitle,
-                                                        GDrawCommandImage *icon) {
+                                                        GDrawCommandImage *icon, uint8_t phone_idx) {
   // as measured from the design specs
   const int horizontal_inset = MENU_CELL_ROUND_UNFOCUSED_HORIZONTAL_INSET;
   const int top_inset = 2;
@@ -532,7 +554,8 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
                                   void *data) {
   NotificationsData *notifications_data = data;
 
-  void (*draw_cell)(GContext *, const Layer *, const char *, const char *, GDrawCommandImage *) =
+  void (*draw_cell)(GContext *, const Layer *, const char *, const char *, GDrawCommandImage *,
+                    uint8_t) =
     PBL_IF_RECT_ELSE(prv_draw_notification_cell_rect, prv_draw_notification_cell_round_selected);
 #if PBL_ROUND
   // on round: just draw the title for anything but the focused row
@@ -546,7 +569,7 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
   if (first_row) {
     // Draw "Clear all" box and exit
 #if PBL_ROUND
-    draw_cell(ctx, cell_layer, i18n_get("Clear All", data), NULL, NULL);
+    draw_cell(ctx, cell_layer, i18n_get("Clear All", data), NULL, NULL, 0);
 #else
     const GFont font = system_theme_get_font_for_default_size(TextStyleFont_MenuCellTitle);
     GRect box = cell_layer->bounds;
@@ -607,7 +630,8 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
     WTF;
   }
 
-  draw_cell(ctx, cell_layer, title, subtitle, loaded_node->icon);
+  const uint8_t phone_idx = timeline_item_get_phone_idx(notification);
+  draw_cell(ctx, cell_layer, title, subtitle, loaded_node->icon, phone_idx);
 }
 
 // Display the appropriate layer

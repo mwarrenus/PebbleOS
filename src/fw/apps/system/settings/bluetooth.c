@@ -26,6 +26,9 @@
 #include "pbl/services/bluetooth/pairability.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/bluetooth/ble_hrm.h"
+#include "pbl/services/clock.h"
+#include "pbl/services/notifications/notifications.h"
+#include "pbl/services/timeline/item.h"
 #include "shell/system_theme.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
@@ -375,15 +378,45 @@ static void draw_stored_remote_item(GContext *ctx, const Layer *cell_layer,
 }
 
 
+static void prv_send_test_notification(uint8_t phone_idx, const char *title, const char *body) {
+  AttributeList attr_list = {};
+  attribute_list_add_cstring(&attr_list, AttributeIdTitle, title);
+  attribute_list_add_cstring(&attr_list, AttributeIdBody, body);
+
+  AttributeList dismiss_attr = {};
+  attribute_list_add_cstring(&dismiss_attr, AttributeIdTitle, "Dismiss");
+  TimelineItemActionGroup action_group = {
+    .num_actions = 1,
+    .actions = (TimelineItemAction[]){
+      { .id = 0, .type = TimelineItemActionTypeDismiss, .attr_list = dismiss_attr },
+    },
+  };
+
+  TimelineItem *item = timeline_item_create_with_attributes(
+      rtc_get_time(), 0, TimelineItemTypeNotification, LayoutIdNotification, &attr_list,
+      &action_group);
+  attribute_list_destroy_list(&attr_list);
+  attribute_list_destroy_list(&dismiss_attr);
+  if (item) {
+    item->header.phone_idx = phone_idx;
+    item->header.ancs_notif = (phone_idx == 2);
+    notifications_add_notification(item);
+    timeline_item_destroy(item);
+  }
+}
+
 static uint16_t prv_num_rows_cb(SettingsCallbacks *context) {
   SettingsBluetoothData *data = (SettingsBluetoothData *) context;
-  return list_count(data->remote_list_head) + 3;
+  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+  return list_count(data->remote_list_head) + (max_phones > 1 ? 5 : 3);
 }
 
 static int16_t prv_row_height_cb(SettingsCallbacks *context, uint16_t row, bool is_selected) {
   SettingsBluetoothData *data = (SettingsBluetoothData *) context;
   const unsigned int num_remotes = list_count(data->remote_list_head);
-  if (row == num_remotes + 2) {
+  const uint8_t max_phones = bt_persistent_storage_get_max_phones();
+  const uint16_t instruction_row = num_remotes + (max_phones > 1 ? 4 : 2);
+  if (row == instruction_row) {
     return 60;
   }
 #if PBL_RECT
@@ -443,6 +476,12 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
     const char *title = i18n_get("Phones Allowed", data);
     const char *subtitle = (max_phones == 1) ? i18n_get("1 Phone", data) : i18n_get("2 Phones", data);
     menu_cell_basic_draw(ctx, cell_layer, title, subtitle, NULL);
+  } else if (row == num_remotes + 2 && bt_persistent_storage_get_max_phones() > 1) {
+    menu_cell_basic_draw(ctx, cell_layer, i18n_get("Test Phone 1 Alert", data),
+                         i18n_get("Send test notification", data), NULL);
+  } else if (row == num_remotes + 3 && bt_persistent_storage_get_max_phones() > 1) {
+    menu_cell_basic_draw(ctx, cell_layer, i18n_get("Test Phone 2 Alert", data),
+                         i18n_get("Send test notification", data), NULL);
   } else {
     // Instruction text row
     const uint8_t max_phones = bt_persistent_storage_get_max_phones();
@@ -499,6 +538,15 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     gap_le_slave_reconnect_start();
     settings_bluetooth_update_remotes(data);
     prv_update_pairability(data);
+    return;
+  }
+  if (row == num_remotes + 2 && bt_persistent_storage_get_max_phones() > 1) {
+    prv_send_test_notification(1, "Android (Phone 1)", "Message received from Android device.");
+    return;
+  }
+  if (row == num_remotes + 3 && bt_persistent_storage_get_max_phones() > 1) {
+    prv_send_test_notification(2, "iPhone (Phone 2)", "Message received from iPhone device.");
+    return;
   }
 }
 

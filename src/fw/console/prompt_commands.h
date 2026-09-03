@@ -29,6 +29,8 @@ extern void command_touch_nav_log(void);
 extern void command_touch_nav_enable(void);
 extern void command_touch_nav_disable(void);
 extern void command_notif_test(void);
+extern void command_notif_test1(void);
+extern void command_notif_test2(void);
 #endif
 
 extern void command_stats_dump_now(void);
@@ -312,6 +314,8 @@ static const Command s_prompt_commands[] = {
   { "touch nav disable", command_touch_nav_disable, 0 },
 #ifndef CONFIG_RECOVERY_FW
   { "notif test", command_notif_test, 0 },
+  { "notif test 1", command_notif_test1, 0 },
+  { "notif test 2", command_notif_test2, 0 },
 #endif  // CONFIG_RECOVERY_FW
 #endif
   { "reset", command_reset, 0 },

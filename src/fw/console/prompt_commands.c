@@ -1515,13 +1515,10 @@ void command_console_disable_rx(const char *seconds_str) {
 // shown — that is the overlay the swap-touch fix routes around.
 // Notifications/timeline are unavailable in the recovery firmware, so this is normal-fw only.
 #ifndef CONFIG_RECOVERY_FW
-void command_notif_test(void) {
+static void prv_notif_test_phone(uint8_t phone_idx, const char *title, const char *body) {
   AttributeList attr_list = {};
-  attribute_list_add_cstring(&attr_list, AttributeIdTitle, "Touch Test");
-  attribute_list_add_cstring(
-      &attr_list, AttributeIdBody,
-      "Swipe up/down to scroll this body. Line 2. Line 3. Line 4. Line 5. Line 6. Line 7. Line 8. "
-      "Line 9. Line 10. Line 11. Line 12. Line 13. Line 14. Swipe left=BACK, right=SELECT.");
+  attribute_list_add_cstring(&attr_list, AttributeIdTitle, title);
+  attribute_list_add_cstring(&attr_list, AttributeIdBody, body);
 
   AttributeList dismiss_attr = {};
   attribute_list_add_cstring(&dismiss_attr, AttributeIdTitle, "Dismiss");
@@ -1537,11 +1534,29 @@ void command_notif_test(void) {
       &action_group);
   attribute_list_destroy_list(&attr_list);
   attribute_list_destroy_list(&dismiss_attr);
-  notifications_add_notification(item);
-  timeline_item_destroy(item);
+  if (item) {
+    item->header.phone_idx = phone_idx;
+    item->header.ancs_notif = (phone_idx == 2);
+    notifications_add_notification(item);
+    timeline_item_destroy(item);
+  }
 
   char buf[32];
-  prompt_send_response_fmt(buf, sizeof(buf), "test notification added");
+  prompt_send_response_fmt(buf, sizeof(buf), "test notif %u added", (unsigned)phone_idx);
+}
+
+void command_notif_test(void) {
+  prv_notif_test_phone(1, "Touch Test",
+      "Swipe up/down to scroll this body. Line 2. Line 3. Line 4. Line 5. Line 6. Line 7. Line 8. "
+      "Line 9. Line 10. Line 11. Line 12. Line 13. Line 14. Swipe left=BACK, right=SELECT.");
+}
+
+void command_notif_test1(void) {
+  prv_notif_test_phone(1, "Android (Phone 1)", "Message received from Android device.");
+}
+
+void command_notif_test2(void) {
+  prv_notif_test_phone(2, "iPhone (Phone 2)", "Message received from iPhone device.");
 }
 #endif  // CONFIG_RECOVERY_FW
 

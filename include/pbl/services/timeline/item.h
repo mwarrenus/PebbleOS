@@ -132,6 +132,9 @@ typedef struct PACKED {
       uint8_t from_watch:1;
       //! Indicates that this notification was added by ANCS (iOS)
       uint8_t ancs_notif:1;
+      //! Indicates which connected phone sent this item (1 = Phone 1, 2 = Phone 2, 0 = unset)
+      uint8_t phone_idx:2;
+      uint8_t reserved:1;
     };
     uint8_t flags;
   };
@@ -317,3 +320,12 @@ TimelineItemAction *timeline_item_action_group_find_reply_action(
 
 //! Return true if the TimelineItem is received from an ANCS message (iOS devices)
 bool timeline_item_is_ancs_notif(const TimelineItem *item);
+
+//! Return the 1-based phone index (1 for Phone 1, 2 for Phone 2) for the TimelineItem
+static inline uint8_t timeline_item_get_phone_idx(const TimelineItem *item) {
+  if (!item) {
+    return 0;
+  }
+  return item->header.phone_idx;
+}
+
