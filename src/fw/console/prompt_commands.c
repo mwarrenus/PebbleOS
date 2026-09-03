@@ -22,10 +22,8 @@
 #include "kernel/util/delay.h"
 #include "kernel/util/factory_reset.h"
 #include "kernel/util/sleep.h"
-#include "process_management/app_manager.h"
 #include "process_management/worker_manager.h"
 #include "prompt.h"
-#include "resource/resource_storage_flash.h"
 #include "pbl/services/compositor/compositor.h"
 #include "pbl/services/system_task.h"
 #include "pbl/services/filesystem/pfs.h"
@@ -44,10 +42,6 @@
 
 #include <bluetooth/responsiveness.h>
 #include <bluetooth/gatt_discovery.h>
-
-#if MEMFAULT
-#include "memfault/components.h"
-#endif
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -1025,7 +1019,7 @@ void command_audit_delay_us(void) {
 // Arms the JDI display driver to drop the next LCDC transfer-complete
 // callback, simulating the silent-loss failure mode (e.g. SiFli HAL ICB
 // overflow). The silent-loss timer should fire ~500ms later and PBL_CROAK,
-// producing a Memfault coredump and a watch reboot.
+// producing a coredump and a watch reboot.
 void command_display_drop_complete(void) {
   display_jdi_test_drop_next_complete();
   prompt_send_response("display: armed drop of next LCDC complete; PBL_CROAK in ~500ms");
@@ -1143,26 +1137,6 @@ void command_ble_logging_get_level(void) {
     prompt_send_response_fmt(buffer, 32, "Ble Log level: %d", log_level);
   }
 }
-
-#if MEMFAULT
-void command_mflt_export(void) {
-  memfault_data_export_dump_chunks();
-}
-
-void command_mflt_collect(void) {
-  void memfault_chunk_collect(void);
-  memfault_chunk_collect();
-}
-
-void command_mflt_metrics_dump(void) {
-  memfault_metrics_heartbeat_debug_print();
-}
-
-void command_mflt_device_info(void) {
-  memfault_build_info_dump();
-  memfault_device_info_dump();
-}
-#endif  // MEMFAULT
 
 #ifdef CONFIG_PERFORMANCE_TESTS
 // for task_watchdog_bit_set_all

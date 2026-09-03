@@ -1,7 +1,6 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include "applib/accel_service.h"
 #include "util/time/time.h"
 
 
@@ -92,6 +91,10 @@ uint32_t kalg_state_size(void);
 // @param[in] stats_cb if not NULL, this callback will be called while analyzing samples with
 //  statistics that are computed.
 bool kalg_init(KAlgState *state, KAlgStatsCallback stats_cb);
+
+// Release resources held by the state. Must be called before freeing it.
+// @param[in] state the state structure passed into kalg_init
+void kalg_deinit(KAlgState *state);
 
 // Analyze a set of accel samples
 // @param[in] state the state structure passed into kalg_init

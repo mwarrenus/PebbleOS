@@ -11,15 +11,11 @@
 #include "applib/ui/animation.h"
 #include "applib/ui/menu_layer.h"
 #include "applib/ui/property_animation.h"
-#include "applib/ui/window_private.h"
-#include "kernel/pbl_malloc.h"
 #include "kernel/ui/kernel_ui.h"
 #include "resource/resource_ids.auto.h"
 #include "shell/system_theme.h"
 #include "system/passert.h"
 #include "pbl/util/math.h"
-
-#include <string.h>
 
 #define INDICATOR "»"
 
@@ -746,6 +742,10 @@ static void prv_update_aml_cache(ActionMenuLayer *aml, int selected_index) {
   const bool center_focused = !prv_aml_is_short(aml);
   menu_layer_set_center_focused(&aml->menu_layer, center_focused);
 #endif
+  // Short-item rows hold several columns, and the row-granular tap hit-test cannot tell which
+  // column the finger meant — keep the two-step tap (select, then activate) for those instead of
+  // the plain menus' tap-to-activate.
+  menu_layer_set_tap_select_only(&aml->menu_layer, prv_aml_is_short(aml));
 
   layer_mark_dirty(&aml->layer);
   menu_layer_reload_data(&aml->menu_layer);

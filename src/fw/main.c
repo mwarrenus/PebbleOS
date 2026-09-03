@@ -2,7 +2,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
-#include <setjmp.h>
 
 #include "debug/power_tracking.h"
 
@@ -12,7 +11,6 @@
 #include "console/dbgserial_input.h"
 #include "console/pulse.h"
 
-#include <pbl/drivers/clocksource.h>
 #include <pbl/drivers/rtc.h>
 #include <pbl/drivers/flash.h>
 #include <pbl/drivers/debounced_button.h>
@@ -22,7 +20,6 @@
 #include <pbl/drivers/backlight.h>
 #include <pbl/drivers/battery.h>
 #include <pbl/drivers/display/display.h>
-#include <pbl/drivers/gpio.h>
 #include <pbl/drivers/hrm.h>
 #include <pbl/drivers/mag.h>
 #include <pbl/drivers/mic.h>
@@ -40,14 +37,11 @@
 #include "resource/resource.h"
 #include "resource/system_resource.h"
 
-#include "kernel/coredump_extra_regions.h"
 #include "kernel/util/task_init.h"
-#include "kernel/util/sleep.h"
 #include "kernel/events.h"
 #include "kernel/kernel_heap.h"
 #include "kernel/fault_handling.h"
 #include "kernel/memory_layout.h"
-#include "kernel/panic.h"
 #include "logging/pulse_logging.h"
 #include "pbl/services/services.h"
 #include "pbl/services/boot_splash.h"
@@ -68,19 +62,9 @@
 
 #include "kernel/event_loop.h"
 
-#include "applib/fonts/fonts.h"
-#include "applib/graphics/graphics.h"
-#include "applib/graphics/text.h"
-#include "applib/ui/ui.h"
-#include "applib/ui/window_stack_private.h"
-
 #include "console/serial_console.h"
 #include "system/bootbits.h"
 #include <pbl/logging/logging.h>
-#include "system/passert.h"
-#include "system/reset.h"
-
-#include "syscall/syscall_internal.h"
 
 #include "debug/debug.h"
 
@@ -91,8 +75,6 @@
 #include "mfg/mfg_serials.h"
 
 #include <bluetooth/init.h>
-
-#include <string.h>
 
 void soc_early_init(void);
 
@@ -289,11 +271,6 @@ static NOINLINE void prv_main_task_init(void) {
   // from firing if we block other tasks.
   task_watchdog_init();
   task_watchdog_pause(30);
-
-  // Wire up the coredump extra-regions registry before pbl_analytics_init,
-  // which triggers Memfault coredump reconstruction. Reconstruction reads the
-  // registry to decide what beyond-the-defaults RAM to forward to the cloud.
-  coredump_extra_regions_init();
 
   pbl_analytics_init();
   register_system_timers();

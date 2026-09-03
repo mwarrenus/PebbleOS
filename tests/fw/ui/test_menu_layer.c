@@ -16,6 +16,7 @@
 #include "applib/ui/animation_private.h"
 #include "applib/ui/property_animation_private.h"
 
+#include "fake_app_timer.h"
 #include "fake_rtc.h"
 #include "pbl/drivers/rtc.h"
 
@@ -179,6 +180,7 @@ bool animation_set_handlers(Animation *animation, AnimationHandlers callbacks, v
 
 void test_menu_layer__initialize(void) {
   s_num_rows = 10;
+  fake_app_timer_init();
   fake_rtc_init(0, 0);
   s_anim_to = GPointZero;
   s_anim_handlers = (AnimationHandlers) { 0 };
@@ -192,6 +194,7 @@ void test_menu_layer__initialize(void) {
 }
 
 void test_menu_layer__cleanup(void) {
+  fake_app_timer_deinit();
 }
 
 static void prv_draw_row(GContext* ctx,
@@ -895,11 +898,13 @@ void test_menu_layer__touch_pan_center_focused_tracks_with_focus_heights(void) {
   cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, target_offset);
 }
 
-// ---- Criterion 3: tap selects, a second tap on the selected row activates ----
+// ---- Criterion 3: a tap on a plain menu selects AND activates in one gesture (phone model);
+// a carousel keeps the two-step (tap centres, tap on the centred row activates) ----
 
-// A tap on a row that is NOT the current selection only selects it (through the will_change
-// contract) and centres it — it must NOT activate. Activation is the second tap.
-void test_menu_layer__touch_tap_unselected_selects_no_activate(void) {
+// A tap on a row that is NOT the current selection selects it (through the will_change contract)
+// and activates it in the same gesture — the "scroll, then tap the item you want" flow opens in
+// ONE tap. The commit does not scroll: the row stays exactly where the finger touched it.
+void test_menu_layer__touch_tap_unselected_selects_and_activates(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
   prv_set_touch_callbacks(&l);
@@ -910,7 +915,9 @@ void test_menu_layer__touch_tap_unselected_selects_no_activate(void) {
   menu_layer_touch_handle_tap(&l, GPoint(72, 2 * 44 + 22));  // row 2, offset 0
   cl_assert_equal_i(s_will_change_count, 1);                 // the full contract ran
   cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 2);  // selection moved to the tapped row
-  cl_assert_equal_i(s_select_click_count, 0);               // but it did NOT activate
+  cl_assert_equal_i(s_select_click_count, 1);                // and it activated in the same tap
+  cl_assert_equal_i(s_select_click_index.row, 2);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, 0);  // no re-centre scroll
 }
 
 // A tap on the row that IS the current selection activates it, without re-running the contract.
@@ -927,10 +934,9 @@ void test_menu_layer__touch_tap_selected_activates(void) {
   cl_assert_equal_i(s_will_change_count, 0);                // no reselection contract on the selected row
 }
 
-// Animation robustness: the "tapped == selection" check keys off the committed selection INDEX, not
-// the on-screen position. A selection can be committed to a row that is still off-centre (mid-flight
-// toward the centre); a tap landing on it must still ACTIVATE, so a fast double tap in one spot
-// launches the row even though it has not finished animating to the centre.
+// The "tapped == selection" check keys off the committed selection INDEX, not the on-screen
+// position: a selection committed off-centre (button nav, MenuRowAlignNone commits) must still
+// activate when tapped.
 void test_menu_layer__touch_tap_selected_offcentre_activates(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
@@ -1019,43 +1025,12 @@ void test_menu_layer__touch_double_tap_during_center_focused_jump(void) {
   cl_assert_equal_i(s_select_click_index.row, 2);          // the jump target, not the stale row 0
 }
 
-// ---- Criterion 3a: double-tap window (fast double tap in one spot on an animated menu) ----
+// ---- Criterion 3a: plain menus have no double-tap special case — every tap activates ----
 
-// The case the naive index compare CANNOT handle: on an animated (non-center_focused) menu, tap 1
-// selects a row and it starts sliding to the centre; tap 2 in the SAME screen spot now hit-tests a
-// DIFFERENT row, yet must ACTIVATE the row tap 1 selected (via the double-tap window), not re-select.
-void test_menu_layer__touch_double_tap_same_spot_activates(void) {
-  MenuLayer l;
-  menu_layer_init(&l, &GRect(0, 0, 144, 180));  // non-center_focused => animated selection
-  prv_set_touch_callbacks(&l);
-  menu_layer_reload_data(&l);
-  prv_reset_touch_counters();
-  s_will_change_mode = WillChange_Passthrough;
-
-  // Tap 1: selects row 3 and arms the window. No activation yet.
-  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // screen y 154, offset 0 => row 3
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 3);
-  cl_assert_equal_i(s_select_click_count, 0);
-
-  // Simulate row 3 sliding toward the centre: scroll so the SAME screen point sits on another row.
-  scroll_layer_set_content_offset(&l.scroll_layer, GPoint(0, -66), false);
-  MenuIndex probe;  // content_y = 154 - (-66) = 220 => row 5, a DIFFERENT row than the selected 3
-  cl_assert(menu_layer_touch_find_row_at_content_y(&l, 154 + 66, &probe));
-  cl_assert(probe.row != 3);
-
-  // Tap 2 in the same spot, well within the 300ms window: activates the RECORDED row 3, not the
-  // neighbour the tap now hit-tests, and runs no new will_change contract.
-  fake_rtc_increment_ticks((RtcTicks)100 * RTC_TICKS_HZ / 1000);  // +100ms < 300ms
-  prv_reset_touch_counters();
-  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));
-  cl_assert_equal_i(s_select_click_count, 1);
-  cl_assert_equal_i(s_select_click_index.row, 3);   // the selected row, NOT the hit-tested neighbour
-  cl_assert_equal_i(s_will_change_count, 0);
-}
-
-// A second tap AFTER the window (> 300ms) is a fresh single tap: it selects the newly tapped row and
-// does not activate the earlier one.
-void test_menu_layer__touch_tap_after_window_selects(void) {
+// Two taps on the same row activate it twice (e.g. toggling a checkbox row on and then off). The
+// first tap selects + activates in one gesture; the second lands on the now-selected row and
+// activates again. No double-tap window is ever armed on a plain menu.
+void test_menu_layer__touch_tap_each_tap_activates(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
   prv_set_touch_callbacks(&l);
@@ -1063,41 +1038,43 @@ void test_menu_layer__touch_tap_after_window_selects(void) {
   prv_reset_touch_counters();
   s_will_change_mode = WillChange_Passthrough;
 
-  menu_layer_touch_handle_tap(&l, GPoint(72, 1 * 44 + 22));  // tap row 1: selects + arms window
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 1);
-  cl_assert_equal_i(s_select_click_count, 0);
+  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // row 3: select + activate
+  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 3);
+  cl_assert_equal_i(s_select_click_count, 1);
+  cl_assert_equal_i(s_select_click_index.row, 3);
+  cl_assert(!l.double_tap_armed);                            // plain taps never arm the window
 
-  // Let the window lapse, then tap a different visible row from a clean offset.
-  fake_rtc_increment_ticks((RtcTicks)400 * RTC_TICKS_HZ / 1000);  // +400ms > 300ms
-  scroll_layer_set_content_offset(&l.scroll_layer, GPoint(0, 0), false);
-  prv_reset_touch_counters();
-  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // row 3
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 3);  // selected the new row
-  cl_assert_equal_i(s_select_click_count, 0);                   // did NOT activate the old one
+  fake_rtc_increment_ticks((RtcTicks)100 * RTC_TICKS_HZ / 1000);  // a fast second tap...
+  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // ...same spot (the row never moved)
+  cl_assert_equal_i(s_select_click_count, 2);                // ...simply activates again
+  cl_assert_equal_i(s_select_click_index.row, 3);
 }
 
+// Carousel: the recorded double-tap index is the committed (range-clamped) jump target, never the
+// raw will_change output — a redirect to an out-of-range row must not hand select_click an OOB
+// index on the fast second tap.
 void test_menu_layer__touch_double_tap_records_clamped_selection(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
+  menu_layer_set_center_focused(&l, true);
   prv_set_touch_callbacks(&l);
   menu_layer_reload_data(&l);
   prv_reset_touch_counters();
 
-  // Tap 1: will_change redirects to an out-of-range row; menu_layer_set_selected_index clamps it to
-  // the last valid row. The recorded double-tap index must be that CLAMPED selection, not the raw
-  // out-of-range will_change output.
+  // Tap 1: taps row 2 (row 0 centred at offset 68); will_change redirects out of range, and
+  // menu_layer_set_selected_index clamps the jump target to the last valid row.
   s_will_change_mode = WillChange_Redirect;
   s_will_change_redirect = MenuIndex(0, 999);
-  menu_layer_touch_handle_tap(&l, GPoint(72, 2 * 44 + 22));  // taps row 2, redirected out of range
-  const uint16_t clamped_row = menu_layer_get_selected_index(&l).row;
-  cl_assert(clamped_row < 999);                 // proved clamped to a valid row
-  cl_assert_equal_i(s_select_click_count, 0);   // selected, not activated
+  menu_layer_touch_handle_tap(&l, GPoint(72, 110 + 68));
+  cl_assert_equal_i(s_select_click_count, 0);              // selected, not activated
+  const uint16_t clamped_row = l.animation.new_selection.index.row;  // the jump's committed target
+  cl_assert(clamped_row < 999);                            // proved clamped to a valid row
 
-  // Tap 2 inside the window: priority 1 activates the RECORDED index, which must be the clamped row,
-  // never the out-of-range 999 a client redirect asked for.
+  // Tap 2 inside the window: priority 1 activates the RECORDED index, which must be the clamped
+  // row, never the out-of-range 999 the client redirect asked for.
   fake_rtc_increment_ticks((RtcTicks)100 * RTC_TICKS_HZ / 1000);  // +100ms < 300ms
   prv_reset_touch_counters();
-  menu_layer_touch_handle_tap(&l, GPoint(72, 2 * 44 + 22));
+  menu_layer_touch_handle_tap(&l, GPoint(72, 110 + 68));
   cl_assert_equal_i(s_select_click_count, 1);
   cl_assert_equal_i(s_select_click_index.row, clamped_row);  // clamped, NOT the out-of-range 999
 }
@@ -1131,61 +1108,64 @@ void test_menu_layer__touch_tap_veto_does_not_recenter(void) {
   cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, offset_before);
 }
 
-// A2: a non-tap selection move (button nav) between two taps disarms the double-tap window, so the
-// second in-window tap SELECTS the freshly hit-tested row instead of activating the stale recorded
-// one. Without the disarm at the selection choke point, this would wrongly activate the old row.
+// A2: a non-tap selection move (button nav) between two carousel taps disarms the double-tap
+// window, so the second in-window tap goes through the normal tap path instead of activating the
+// stale recorded row. Without the disarm at the selection choke point, this would wrongly fire.
 void test_menu_layer__touch_button_nav_disarms_double_tap(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
+  menu_layer_set_center_focused(&l, true);
   prv_set_touch_callbacks(&l);
   menu_layer_reload_data(&l);
   prv_reset_touch_counters();
   s_will_change_mode = WillChange_Passthrough;
 
-  // Tap row 3: selects it and arms the window (no activation yet).
-  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // content_y 154 => row 3
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 3);
+  // Tap row 2 (row 0 centred at offset 68): schedules the jump and arms the window.
+  menu_layer_touch_handle_tap(&l, GPoint(72, 110 + 68));
+  cl_assert(l.double_tap_armed);
   cl_assert_equal_i(s_select_click_count, 0);
 
-  // Button DOWN moves the selection through the non-tap path -> must disarm the window.
-  menu_layer_set_selected_next(&l, false, MenuRowAlignCenter, false);
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 4);
+  // Button nav moves the selection through the non-tap choke point -> must disarm the window.
+  menu_layer_set_selected_next(&l, false /* down */, MenuRowAlignCenter, false);
+  cl_assert(!l.double_tap_armed);
 
-  // A tap within the 300ms window at the ORIGINAL screen point: the stale arm is gone, so it
-  // hit-tests row 3 and SELECTS it instead of activating the recorded row.
+  // A tap within the 300ms window on a not-selected row: with the arm gone it is an ordinary
+  // carousel tap-select (no activation). A stale arm would have activated the recorded row here.
   fake_rtc_increment_ticks((RtcTicks)100 * RTC_TICKS_HZ / 1000);  // +100ms < 300ms
-  scroll_layer_set_content_offset(&l.scroll_layer, GPoint(0, 0), false);
   prv_reset_touch_counters();
-  menu_layer_touch_handle_tap(&l, GPoint(72, 3 * 44 + 22));  // content_y 154 => row 3
-  cl_assert_equal_i(s_select_click_count, 0);                   // SELECTED, not activated
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 3);  // the newly hit-tested row
+  const int16_t off = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  menu_layer_touch_handle_tap(&l, GPoint(72, 154 + off));  // row 3 (content_y 154)
+  cl_assert_equal_i(s_select_click_count, 0);              // selected, not activated
+  cl_assert_equal_i(s_will_change_count, 1);               // the normal tap contract ran
 }
 
-// A2: menu_layer_reload_data disarms the window, so a reload that deletes the recorded row cannot let
-// a follow-up in-window tap activate a now out-of-range index (client OOB on select_click).
+// A2: menu_layer_reload_data disarms the window, so a reload that deletes the recorded row cannot
+// let a follow-up in-window tap activate a now out-of-range index (client OOB on select_click).
 void test_menu_layer__touch_reload_disarms_double_tap(void) {
   MenuLayer l;
   menu_layer_init(&l, &GRect(0, 0, 144, 180));
+  menu_layer_set_center_focused(&l, true);
   prv_set_touch_callbacks(&l);
   menu_layer_reload_data(&l);
   prv_reset_touch_counters();
   s_will_change_mode = WillChange_Passthrough;
 
-  // Tap row 5: selects it and arms the window.
-  menu_layer_touch_handle_tap(&l, GPoint(72, 5 * 44 + 22));  // content_y 242 => row 5
-  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 5);
+  // Tap row 2 (row 0 centred at offset 68): schedules the jump and arms the window.
+  menu_layer_touch_handle_tap(&l, GPoint(72, 110 + 68));
+  cl_assert(l.double_tap_armed);
   cl_assert_equal_i(s_select_click_count, 0);
 
-  // Reload shrinking the list so the recorded row 5 no longer exists must disarm the window.
-  s_num_rows = 3;
+  // Reload shrinking the list so the recorded row 2 no longer exists must disarm the window.
+  s_num_rows = 2;
   menu_layer_reload_data(&l);
+  cl_assert(!l.double_tap_armed);
 
-  // A tap within the window must NOT activate the stale (now out-of-range) row 5.
+  // A tap within the window must NOT activate the stale (now out-of-range) row 2.
   fake_rtc_increment_ticks((RtcTicks)100 * RTC_TICKS_HZ / 1000);  // +100ms < 300ms
-  scroll_layer_set_content_offset(&l.scroll_layer, GPoint(0, 0), false);
   prv_reset_touch_counters();
-  menu_layer_touch_handle_tap(&l, GPoint(72, 1 * 44 + 22));  // content_y 66 => row 1
-  cl_assert_equal_i(s_select_click_count, 0);                 // no stale activation
+  const int16_t off = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  menu_layer_touch_handle_tap(&l, GPoint(72, 66 + off));   // row 1 (content_y 66)
+  cl_assert_equal_i(s_select_click_count, 0);              // no stale activation
 }
 
 // ---- Criterion 4: on a plain menu the selection is frozen during a pan; no client callbacks ----
@@ -1225,20 +1205,28 @@ void test_menu_layer__touch_clamp_center_focused_widens(void) {
   menu_layer_set_center_focused(&l, true);
   prv_set_touch_callbacks(&l);
   menu_layer_reload_data(&l);
-  // center_focused widens the clamp by frame_h/2 (=90), so a positive offset up to +90 is allowed
-  // where a normal menu would clamp at 0.
-  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 300));
-  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, 90);
-
-  // The widen is symmetric: it also lowers the min bound by frame_h/2. A large negative pan reaches
-  // min(frame_h - content_h, 0) - frame_h/2; dropping the min_y widen would stop it at the un-widened
-  // min, so this pins the lower-bound widen the +90 case alone leaves untested.
   const int16_t frame_h = l.scroll_layer.layer.frame.size.h;
   const int16_t content_h = scroll_layer_get_content_size(&l.scroll_layer).h;
-  const int16_t expected_min = MIN((int16_t)(frame_h - content_h), (int16_t)0) - (int16_t)(frame_h / 2);
+  // With the first row selected the top bound is its exact centred rest offset; the selection is
+  // not the last row, so the bottom bound keeps the coarse half-frame widen.
+  const int16_t widened_max = (int16_t)((frame_h - 44) / 2);
+  const int16_t widened_min =
+      MIN((int16_t)(frame_h - content_h), (int16_t)0) - (int16_t)(frame_h / 2);
+
+  // center_focused widens the bounds so the terminal rows can reach the centre; past the widened
+  // edge the pan rubber-bands by the shared damp mapping instead of hard-clamping.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 300));
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y,
+                    scroll_layer_touch_overscroll_damp(300, widened_min, widened_max, frame_h));
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y > widened_max);
+
+  // The widen is symmetric: the min bound is lowered by frame_h/2 too, and the rubber band hangs
+  // off the widened min; dropping the min_y widen would damp from the un-widened min instead.
   scroll_layer_set_content_offset(&l.scroll_layer, GPoint(0, 0), false);
   menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -3000));
-  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, expected_min);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y,
+                    scroll_layer_touch_overscroll_damp(-3000, widened_min, widened_max, frame_h));
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y < widened_min);
 }
 
 // ---- Criterion 6: a cancelled pan leaves the selection alone and fires no client callback ----
@@ -1383,7 +1371,7 @@ void test_menu_layer__touch_deinit_mid_gesture_cancels(void) {
   layer_add_child(&s_root_layer, menu_layer_get_layer(&l2));
   prv_reset_touch_counters();
   s_will_change_mode = WillChange_Passthrough;
-  // A tap on the unselected row 2 selects it (routing recovered); activation would be a second tap.
+  // A tap on the unselected row 2 selects and activates it (routing recovered).
   menu_layer_touch_handle_tap(&l2, GPoint(100, 2 * 44 + 22));
   cl_assert_equal_i(menu_layer_get_selected_index(&l2).row, 2);
   cl_assert_equal_i(s_will_change_count, 1);
@@ -1565,7 +1553,8 @@ static MenuLayer *prv_dispatch_menu_setup(MenuLayer *l) {
 
 // ---- Tap through the dispatcher honours the full selection_will_change contract ----
 
-// (a) Passthrough: a tap on an unselected row runs the contract and selects it, without activating.
+// (a) Passthrough: a tap on an unselected row runs the contract, selects it, and activates it in
+// the same gesture (plain menus open on a single tap).
 void test_menu_layer__dispatch_tap_passthrough_selects(void) {
   prv_touch_nav_setup();
   MenuLayer l;
@@ -1575,7 +1564,8 @@ void test_menu_layer__dispatch_tap_passthrough_selects(void) {
   prv_menu_dispatch_tap(100, 2 * 44 + 22);  // row 2 (offset 0)
   cl_assert_equal_i(s_will_change_count, 1);                     // the contract ran through dispatch
   cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 2);   // selection moved to the tapped row
-  cl_assert_equal_i(s_select_click_count, 0);                    // but did NOT activate
+  cl_assert_equal_i(s_select_click_count, 1);                    // and it activated
+  cl_assert_equal_i(s_select_click_index.row, 2);
   menu_layer_deinit(&l);
 }
 
@@ -1980,4 +1970,367 @@ void test_menu_layer__touch_catch_center_focused_settles_to_row(void) {
   cl_assert(anim != NULL);
   cl_assert(animation_is_scheduled(anim));
   cl_assert_equal_i(s_anim_to.y, -108);
+}
+
+// Scrollbar overlay
+//////////////////////
+
+GRect prv_scrollbar_thumb_rect(MenuLayer *menu_layer, int16_t content_top_y);
+
+static void prv_init_scrollbar_menu(MenuLayer *l) {
+  menu_layer_init(l, &GRect(0, 0, 144, 168));
+  menu_layer_set_callbacks(l, NULL, &(MenuLayerCallbacks){
+      .draw_row = prv_draw_row,
+      .get_num_rows = prv_get_num_rows,
+  });
+}
+
+void test_menu_layer__scrollbar_shows_on_touch_pan_and_times_out(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -40));
+  cl_assert(l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer != NULL);
+  cl_assert(fake_app_timer_is_scheduled(l.scrollbar_hide_timer));
+
+  cl_assert(app_timer_trigger(l.scrollbar_hide_timer));
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_not_shown_on_button_scroll(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  // Button scrolling moves the offset through the selection, not a touch gesture
+  menu_layer_set_selected_index(&l, MenuIndex(0, 5), MenuRowAlignTop, false);
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y < 0);
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_not_shown_when_content_fits(void) {
+  s_num_rows = 2;
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -40));
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_rearms_timer_while_scrolling(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -40));
+  AppTimer *timer = l.scrollbar_hide_timer;
+  cl_assert(timer != NULL);
+  // A further pan movement reschedules the same timer instead of registering a new one
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -60));
+  cl_assert(l.scrollbar_hide_timer == timer);
+  cl_assert(l.scrollbar_visible);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_kept_alive_by_fling_coast(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  // Fast liftoff schedules an inertial coast and shows the scrollbar
+  menu_layer_touch_handle_snap(&l, GPoint(0, -40), GPoint(0, -60), GPoint(0, -500));
+  cl_assert(l.touch_fling_active);
+  cl_assert(l.scrollbar_visible);
+
+  // Even if the hide timer fires mid-coast, the next coast frame re-shows and re-arms it
+  cl_assert(app_timer_trigger(l.scrollbar_hide_timer));
+  cl_assert(!l.scrollbar_visible);
+  prv_scroll_layer_set_content_offset_internal(&l.scroll_layer, GPoint(0, -120));
+  cl_assert(l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer != NULL);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_set_hidden(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_set_scrollbar_hidden(&l, true);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -40));
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+
+  // Re-enabling shows it on the next touch scroll; hiding while visible clears it immediately
+  menu_layer_set_scrollbar_hidden(&l, false);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, -40), GPoint(0, -20));
+  cl_assert(l.scrollbar_visible);
+  AppTimer *timer = l.scrollbar_hide_timer;
+  cl_assert(timer != NULL);
+  menu_layer_set_scrollbar_hidden(&l, true);
+  cl_assert(!l.scrollbar_visible);
+  cl_assert(l.scrollbar_hide_timer == NULL);
+  cl_assert(!fake_app_timer_is_scheduled(timer));
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__scrollbar_thumb_rect_geometry(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t frame_w = 144;
+  const int16_t frame_h = 168;
+  const int16_t content_h = scroll_layer_get_content_size(&l.scroll_layer).h;
+  cl_assert(content_h > frame_h);
+  const int16_t scrollable_h = content_h - frame_h;
+  const int16_t track_h = frame_h - 2;  // 1px margin at each end
+  const int16_t thumb_h = (int16_t)(((int32_t)track_h * frame_h) / content_h);
+
+  // Top of the list: thumb rests at the top track margin
+  GRect r = prv_scrollbar_thumb_rect(&l, 0);
+  cl_assert_equal_i(r.origin.x, frame_w - 4);  // 1px margin + 3px thumb
+  cl_assert_equal_i(r.size.w, 3);
+  cl_assert_equal_i(r.origin.y, 1);
+  cl_assert_equal_i(r.size.h, thumb_h);
+
+  // Bottom of the list: thumb ends at the bottom track margin (content-space coordinates)
+  r = prv_scrollbar_thumb_rect(&l, scrollable_h);
+  cl_assert_equal_i(r.origin.y + r.size.h, scrollable_h + frame_h - 1);
+
+  // Center-focused over-scroll past the top clamps the thumb to the track
+  r = prv_scrollbar_thumb_rect(&l, -40);
+  cl_assert_equal_i(r.origin.y, -40 + 1);
+  menu_layer_deinit(&l);
+}
+
+// Overscroll (rubber band)
+//////////////////////
+
+void test_menu_layer__overscroll_pan_rubber_bands_past_top(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t frame_h = 168;
+  const int16_t content_h = scroll_layer_get_content_size(&l.scroll_layer).h;
+  cl_assert(content_h > frame_h);
+  const int16_t min_y = (int16_t)(frame_h - content_h);
+
+  // A pull past the top follows the shared damp mapping: some movement, but less than the finger.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  const int16_t y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert_equal_i(y, scroll_layer_touch_overscroll_damp(50, min_y, 0, frame_h));
+  cl_assert(y > 0);
+  cl_assert(y < 50);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_snap_springs_back_to_edge(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  const int16_t overscrolled_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert(overscrolled_y > 0);
+
+  // Liftoff (even a fast one) glides back to the edge instead of coasting or snapping.
+  menu_layer_touch_handle_snap(&l, GPoint(0, 0), GPoint(0, 50), GPoint(0, 2000));
+  Animation *anim = property_animation_get_animation(l.scroll_layer.animation);
+  cl_assert(anim != NULL);
+  cl_assert(animation_is_scheduled(anim));
+  cl_assert_equal_i(s_anim_to.y, 0);
+  cl_assert(!l.touch_fling_active);  // a spring-back is not a coast
+  // The glide starts from the rubber-banded offset; nothing snapped yet.
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, overscrolled_y);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_cancel_restores_instantly(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y > 0);
+
+  menu_layer_touch_handle_cancel(&l);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, 0);
+  Animation *anim = property_animation_get_animation(l.scroll_layer.animation);
+  cl_assert(!anim || !animation_is_scheduled(anim));
+  menu_layer_deinit(&l);
+}
+
+// Overscroll highlight stretch
+//////////////////////
+
+void test_menu_layer__overscroll_stretch_fills_gap_at_top(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t cell_h = l.selection.h;
+  cl_assert_equal_i(l.selection.y, 0);  // first row selected
+
+  // Pulling past the top rubber-bands the offset; the selection background extends up to the
+  // viewport top so the exposed gap reads as the selected cell stretching.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  const int16_t offset_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert(offset_y > 0);
+  cl_assert(l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, -offset_y);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, cell_h + offset_y);
+
+  // Tracking the finger back into range restores the natural frame and clears the flag.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, -10));
+  cl_assert(!l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, 0);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, cell_h);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_stretch_only_with_edge_row_selected(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  menu_layer_set_selected_index(&l, MenuIndex(0, 5), MenuRowAlignTop, false);
+  const int16_t base_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  const GRect before = l.inverter.layer.frame;
+
+  // The offset still rubber-bands past the top, but with a mid-list row selected the highlight
+  // is left alone.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, base_y), GPoint(0, -base_y + 50));
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y > 0);
+  cl_assert(!l.overscroll_stretched);
+  cl_assert(grect_equal(&l.inverter.layer.frame, &before));
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_stretch_fills_gap_at_bottom(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t frame_h = 168;
+  const int16_t min_y = (int16_t)(frame_h - scroll_layer_get_content_size(&l.scroll_layer).h);
+  menu_layer_set_selected_index(&l, MenuIndex(0, 9), MenuRowAlignCenter, false);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, min_y);
+
+  // Pulling past the bottom: the highlight extends down to the viewport bottom (covering the
+  // bottom padding on the way), anchored at the cell's top.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, min_y), GPoint(0, -50));
+  const int16_t offset_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert(offset_y < min_y);
+  cl_assert(l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, l.selection.y);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y + l.inverter.layer.frame.size.h,
+                    frame_h - offset_y);  // content-space viewport bottom
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_stretch_follows_spring_back(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t cell_h = l.selection.h;
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  cl_assert(l.overscroll_stretched);
+
+  // Liftoff schedules the offset spring-back toward the edge; the stretch is offset-derived, so
+  // each animation frame shrinks it, and reaching the edge restores the natural frame.
+  menu_layer_touch_handle_snap(&l, GPoint(0, 0), GPoint(0, 50), GPoint(0, 0));
+  cl_assert(animation_is_scheduled(property_animation_get_animation(l.scroll_layer.animation)));
+  cl_assert_equal_i(s_anim_to.y, 0);
+  scroll_layer_touch_set_content_offset_overscrolled(&l.scroll_layer, 5);  // a mid-glide frame
+  cl_assert(l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, -5);
+  scroll_layer_touch_set_content_offset_overscrolled(&l.scroll_layer, 0);  // the glide lands on the edge
+  cl_assert(!l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, 0);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, cell_h);
+  menu_layer_deinit(&l);
+}
+
+void test_menu_layer__overscroll_stretch_resets_on_cancel(void) {
+  MenuLayer l;
+  prv_init_scrollbar_menu(&l);
+  const int16_t cell_h = l.selection.h;
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 0), GPoint(0, 50));
+  cl_assert(l.overscroll_stretched);
+
+  // A cancelled gesture restores the offset instantly, and the stretch follows.
+  menu_layer_touch_handle_cancel(&l);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&l.scroll_layer).y, 0);
+  cl_assert(!l.overscroll_stretched);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, cell_h);
+  menu_layer_deinit(&l);
+}
+
+// Center-focused highlight pin during touch scrolling
+//////////////////////
+
+void test_menu_layer__touch_center_pin_holds_highlight_during_pan(void) {
+  MenuLayer l;
+  const int16_t frame_h = 180;
+  menu_layer_init(&l, &GRect(0, 0, 144, frame_h));
+  menu_layer_set_center_focused(&l, true);
+  prv_set_touch_callbacks(&l);
+  menu_layer_reload_data(&l);
+  const int16_t centered_pad = (frame_h - 44) / 2;  // 68: row 0 centred offset
+
+  // Mid-pan the highlight is pinned to the viewport centre, not to the selected row.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, centered_pad), GPoint(0, -30));
+  const int16_t offset_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert_equal_i(offset_y, centered_pad - 30);
+  cl_assert(l.touch_center_pin);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, -offset_y + centered_pad);
+  cl_assert(l.inverter.layer.frame.origin.y != l.selection.y);  // row 0 is mid-transit
+
+  // A centre crossing re-selects the row underneath but the box does not move with it.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, centered_pad), GPoint(0, -188));
+  const int16_t offset2_y = scroll_layer_get_content_offset(&l.scroll_layer).y;
+  cl_assert(menu_layer_get_selected_index(&l).row > 0);
+  cl_assert(l.touch_center_pin);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, -offset2_y + centered_pad);
+}
+
+void test_menu_layer__touch_center_pin_releases_when_row_lands(void) {
+  MenuLayer l;
+  const int16_t frame_h = 180;
+  menu_layer_init(&l, &GRect(0, 0, 144, frame_h));
+  menu_layer_set_center_focused(&l, true);
+  prv_set_touch_callbacks(&l);
+  menu_layer_reload_data(&l);
+  const int16_t centered_pad = (frame_h - 44) / 2;
+
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, centered_pad), GPoint(0, -188));
+  cl_assert(l.touch_center_pin);
+  const uint16_t row = menu_layer_get_selected_index(&l).row;
+
+  // The settle glide's final frame centres the selected row exactly: the pin releases and the
+  // highlight is back on the row's own frame.
+  const int16_t settled_y = (int16_t)(centered_pad - (44 * row));
+  prv_scroll_layer_set_content_offset_internal(&l.scroll_layer, GPoint(0, settled_y));
+  cl_assert(!l.touch_center_pin);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, l.selection.y);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, l.selection.h);
+}
+
+void test_menu_layer__touch_center_pin_cleared_by_button_step(void) {
+  MenuLayer l;
+  menu_layer_init(&l, &GRect(0, 0, 144, 180));
+  menu_layer_set_center_focused(&l, true);
+  prv_set_touch_callbacks(&l);
+  menu_layer_reload_data(&l);
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, 68), GPoint(0, -30));
+  cl_assert(l.touch_center_pin);
+
+  // A button step hands the highlight back to the selection and its own animations.
+  menu_down_click_handler(NULL, &l);
+  cl_assert(!l.touch_center_pin);
+}
+
+void test_menu_layer__touch_center_pin_moves_with_row_past_the_edge(void) {
+  MenuLayer l;
+  const int16_t frame_h = 180;
+  menu_layer_init(&l, &GRect(0, 0, 144, frame_h));
+  menu_layer_set_center_focused(&l, true);
+  prv_set_touch_callbacks(&l);
+  menu_layer_reload_data(&l);
+  const int16_t rest_y = (frame_h - 44) / 2;  // row 0 centred
+
+  // Pulling past the first row's centred rest rubber-bands the offset; the box has no next row
+  // to transit to, so it glues to the row and moves together with the pull.
+  menu_layer_touch_handle_pan_update(&l, GPoint(0, rest_y), GPoint(0, 50));
+  cl_assert(scroll_layer_get_content_offset(&l.scroll_layer).y > rest_y);
+  cl_assert_equal_i(menu_layer_get_selected_index(&l).row, 0);
+  cl_assert_equal_i(l.inverter.layer.frame.origin.y, l.selection.y);
+  cl_assert_equal_i(l.inverter.layer.frame.size.h, l.selection.h);
 }

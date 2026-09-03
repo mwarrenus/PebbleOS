@@ -4,14 +4,11 @@
 #include <pbl/drivers/task_watchdog.h>
 
 #include <pbl/drivers/watchdog.h>
-#include "kernel/core_dump.h"
 #include "kernel/event_loop.h"
 #include "kernel/pebble_tasks.h"
-#include "pbl/os/mutex.h"
 #include "process_management/app_manager.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
-#include "system/bootbits.h"
 #include "system/die.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
@@ -389,7 +386,7 @@ static void prv_task_watchdog_feed(void) {
     if (s_ticks_since_successful_feed >= WATCHDOG_COREDUMP_TICK_CNT) {
 #if !defined(CONFIG_NO_WATCHDOG)
       // Low-pri handler didn't run; capture stuck_task_pc/lr ourselves so
-      // Memfault has a real PC to fingerprint on.
+      // the coredump has a real PC to fingerprint on.
       prv_capture_stuck_task_info(&reboot_reason);
       reboot_reason_clear();
       reboot_reason_set(&reboot_reason);

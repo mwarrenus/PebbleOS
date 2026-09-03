@@ -14,12 +14,9 @@
 #include "board/board.h"
 #include "applib/graphics/gtypes.h"
 #include <pbl/drivers/ambient_light.h>
-#include <pbl/drivers/backlight.h>
-#include "mfg/mfg_info.h"
 #include "pbl/os/mutex.h"
 #include "popups/timeline/peek.h"
 #include "process_management/app_install_manager.h"
-#include "process_management/process_manager.h"
 #include "pbl/services/accel_manager.h"
 #include "pbl/services/touch/touch.h"
 #include "pbl/services/touch/touch_nav_service.h"
@@ -1418,9 +1415,11 @@ BacklightPreset backlight_get_preset(void) {
     return BacklightPreset_Advanced;
   }
   // A preset is only reported while the underlying settings still match it;
-  // they can drift independently (e.g. via phone sync).
+  // they can drift independently (e.g. via phone sync). Every concrete preset
+  // implies the backlight is on, so a disabled backlight also means Advanced.
   const BacklightPresetSettings *settings = &s_backlight_preset_settings[preset];
-  if ((s_backlight_ambient_sensor_enabled != settings->ambient_sensor_enabled) ||
+  if (!s_backlight_enabled ||
+      (s_backlight_ambient_sensor_enabled != settings->ambient_sensor_enabled) ||
 #ifdef CONFIG_DYNAMIC_BACKLIGHT
       (s_backlight_dynamic_mode != settings->dynamic_mode) ||
 #endif
@@ -1785,6 +1784,16 @@ void system_theme_set_content_size(PreferredContentSize content_size) {
   }
   const uint8_t content_size_uint = content_size;
   prv_pref_set(PREF_KEY_TEXT_STYLE, &content_size_uint, sizeof(content_size_uint));
+
+  // Watch-side sets bypass the blob-db path, so notify subscribed UI here too.
+  PebbleEvent pref_event = {
+    .type = PEBBLE_PREF_CHANGE_EVENT,
+    .pref_change = {
+      .key = PREF_KEY_TEXT_STYLE,
+      .key_len = sizeof(PREF_KEY_TEXT_STYLE),
+    },
+  };
+  event_put(&pref_event);
 }
 
 PreferredContentSize system_theme_get_content_size(void) {

@@ -10,7 +10,6 @@
 #include "kernel/pbl_malloc.h"
 #include "pbl/os/mutex.h"
 #include "process_management/app_install_manager.h"
-#include "pbl/services/analytics/analytics.h"
 #include "pbl/services/clock.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/new_timer/new_timer.h"
@@ -18,11 +17,9 @@
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/timeline/event.h"
-#include "pbl/services/timeline/timeline.h"
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/attributes.h"
-#include "pbl/util/list.h"
 #include "pbl/util/string.h"
 #include "util/units.h"
 
@@ -48,6 +45,18 @@ PBL_LOG_MODULE_DEFINE(service_alarms, CONFIG_SERVICE_ALARMS_LOG_LEVEL);
 // need to be versioned and newer firmwares would need to know how to parse or
 // migrate older versions of the preference struct.
 #define ALARM_PREF_KEY_SNOOZE_DELAY "SnoozeDelayM"
+// The alarm that is currently armed, so that a firing missed while the watch was
+// down (a reboot landing on the alarm's time) can be caught up on the next boot.
+#define ALARM_PREF_KEY_ARMED "ArmedAlarm"
+
+// How late a missed alarm may be before it is no longer worth firing.
+#define ALARM_MISSED_MAX_DELAY_S (5 * SECONDS_PER_MINUTE)
+
+typedef struct PACKED AlarmArmedRecord {
+  //! Cron execute time of the armed alarm, 0 if no alarm is armed.
+  time_t time;
+  AlarmId id;
+} AlarmArmedRecord;
 
 // Multiple pieces of data need to be stored for each alarm. These are split
 // across multiple keys to keep the alarm configuration separate from
@@ -107,7 +116,7 @@ static bool prv_reload_alarms(SettingsFile *file);
 static bool prv_alarm_get_config(SettingsFile *file, AlarmId id, AlarmConfig* config_out);
 static void prv_alarm_set_config(SettingsFile *file, AlarmId id, const AlarmConfig* config);
 static void prv_cron_callback(CronJob *job, void* data);
-static void prv_snooze_alarm(int snooze_delay_s);
+static void prv_snooze_alarm(int snooze_delay_s, bool user_initiated);
 static bool prv_set_alarm_kind_op(AlarmId id, AlarmConfig *config, void *context);
 static bool prv_set_alarm_custom_op(AlarmId id, AlarmConfig *config, void *context);
 
@@ -132,6 +141,13 @@ static bool s_user_snoozed;
 //! Number of times the most recent alarm was automatically smart snoozed.
 //! Used to determine an expired smart alarm avoiding issues with midnight rollover and DST.
 static int s_smart_snooze_counter;
+
+//! Mirrors what ALARM_PREF_KEY_ARMED holds, so it is only rewritten when it changes.
+static AlarmArmedRecord s_armed_record = { .id = ALARM_INVALID_ID };
+
+//! Alarm which should have fired while the watch was down. Fired once alarms are enabled.
+static AlarmId s_missed_alarm_id = ALARM_INVALID_ID;
+static time_t s_missed_alarm_time;
 
 //! Mutex used to guard our list of alarms
 static PebbleMutex *s_mutex;
@@ -342,6 +358,23 @@ static void prv_check_and_schedule_alarm(SettingsFile *fd, Alarm *alarm, bool re
 }
 
 // ----------------------------------------------------------------------------------------------
+//! Records which alarm is armed and when it is due, so that the next boot can tell whether a
+//! firing was missed while the watch was down.
+static void prv_persist_armed_alarm(SettingsFile *file) {
+  const AlarmArmedRecord record = {
+    .time = s_next_alarm_time,
+    .id = (s_next_alarm_time != 0) ? s_next_alarm.id : ALARM_INVALID_ID,
+  };
+  if (memcmp(&record, &s_armed_record, sizeof(record)) == 0) {
+    return;
+  }
+  if (settings_file_set(file, ALARM_PREF_KEY_ARMED, strlen(ALARM_PREF_KEY_ARMED),
+                        &record, sizeof(record)) == S_SUCCESS) {
+    s_armed_record = record;
+  }
+}
+
+// ----------------------------------------------------------------------------------------------
 //! Scans the all the configured alarms and re-adds them all.
 //! @return True if at least one alarm was found
 static bool prv_reload_alarms(SettingsFile *file) {
@@ -358,6 +391,8 @@ static bool prv_reload_alarms(SettingsFile *file) {
       alarm_found = true;
     }
   }
+
+  prv_persist_armed_alarm(file);
 
   timeline_event_refresh();
   return alarm_found;
@@ -414,7 +449,7 @@ static void prv_process_most_recent_alarm(void) {
     if (!trigger) {
       // Not triggering an event, increment to signify elapsed time and snooze
       s_smart_snooze_counter++;
-      prv_snooze_alarm(SMART_ALARM_SNOOZE_DELAY_S);
+      prv_snooze_alarm(SMART_ALARM_SNOOZE_DELAY_S, false /* user_initiated */);
       return;
     }
   }
@@ -507,6 +542,7 @@ static void prv_persist_alarm(SettingsFile *fd, Alarm *alarm) {
 static void prv_add_and_schedule_alarm(SettingsFile *file, Alarm *alarm) {
   prv_check_and_schedule_alarm(file, alarm, true /* refresh */);
   prv_persist_alarm(file, alarm);
+  prv_persist_armed_alarm(file);
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -592,6 +628,30 @@ static void prv_set_day_for_just_once_alarm(AlarmConfig *config, int hour, int m
 
   int wday = prv_get_day_for_just_once_alarm(hour, minute);
   config->scheduled_days[wday] = true;
+}
+
+// ----------------------------------------------------------------------------------------------
+//! Re-picks the day every enabled "just once" alarm should fire on. Their day is stored as a
+//! weekday, so an alarm whose firing was missed (the watch was off or rebooting) would otherwise
+//! stay armed for the same weekday a whole week later.
+static void prv_refresh_just_once_alarm_days(SettingsFile *file) {
+  for (int i = 0; i < MAX_CONFIGURED_ALARMS; ++i) {
+    AlarmConfig config;
+    if (!prv_alarm_get_config(file, i, &config) || config.kind != ALARM_KIND_JUST_ONCE ||
+        config.is_disabled) {
+      continue;
+    }
+
+    bool previous_days[DAYS_PER_WEEK];
+    memcpy(previous_days, config.scheduled_days, sizeof(previous_days));
+    prv_set_day_for_just_once_alarm(&config, config.hour, config.minute);
+    if (memcmp(previous_days, config.scheduled_days, sizeof(previous_days)) == 0) {
+      continue;
+    }
+
+    Alarm alarm = { .id = i, .config = config };
+    prv_persist_alarm(file, &alarm);
+  }
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -1011,8 +1071,11 @@ cleanup:
   return rv;
 }
 
-static void prv_snooze_alarm(int snooze_delay_s) {
+static void prv_snooze_alarm(int snooze_delay_s, bool user_initiated) {
   prv_clear_snooze_timer();
+  // Set before arming the timer: a stale snooze callback queued on KernelBG cannot be cancelled by
+  // new_timer_stop(), and would consume the flag if it ran while the timer was armed without it.
+  s_user_snoozed = user_initiated;
   PBL_LOG_INFO("Snoozing for %d minutes", snooze_delay_s / SECONDS_PER_MINUTE);
   bool success = new_timer_start(s_snooze_timer_id, snooze_delay_s * MS_PER_SECOND,
                                  prv_snooze_timer_callback, NULL, 0 /* flags*/);
@@ -1021,9 +1084,7 @@ static void prv_snooze_alarm(int snooze_delay_s) {
 
 // ----------------------------------------------------------------------------------------------
 void alarm_set_snooze_alarm(void) {
-  prv_snooze_alarm(s_snooze_delay_m * SECONDS_PER_MINUTE);
-  // Set after prv_snooze_alarm(): clearing the previous timer resets the flag.
-  s_user_snoozed = true;
+  prv_snooze_alarm(s_snooze_delay_m * SECONDS_PER_MINUTE, true /* user_initiated */);
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -1137,13 +1198,19 @@ void alarm_handle_clock_change(void) {
     return;
   }
 
+  // Deferred until after the settings file is closed: prv_alarm_operation() opens it itself, and
+  // opening it twice croaks.
+  AlarmId record_alarm_id = ALARM_INVALID_ID;
+
   // If there's an active alarm (e.g., currently snoozing), we need to handle it carefully.
   // For smart alarms near their deadline, we should trigger them before clearing state.
   if (s_most_recent_alarm_id != ALARM_INVALID_ID) {
     bool should_force_trigger = false;
 
-    // Only consider force-triggering for smart alarms that are in their smart snooze window
-    if (s_most_recent_alarm_config.is_smart && s_smart_snooze_counter > 0) {
+    // Only consider force-triggering for smart alarms that are in their smart snooze window.
+    // A user snooze is an explicit deadline and must survive any clock change; force-triggering
+    // here would clear it and re-fire the alarm immediately.
+    if (s_most_recent_alarm_config.is_smart && s_smart_snooze_counter > 0 && !s_user_snoozed) {
       // Check if we've used up most of our smart snooze attempts (within last 2 minutes)
       if (s_smart_snooze_counter >= (SMART_ALARM_MAX_SMART_SNOOZE - 2)) {
         should_force_trigger = true;
@@ -1175,7 +1242,7 @@ void alarm_handle_clock_change(void) {
       prv_put_alarm_event();
       if (!s_most_recent_alarm_recorded) {
         s_most_recent_alarm_recorded = true;
-        prv_alarm_operation(s_most_recent_alarm_id, prv_record_alarm_op, NULL);
+        record_alarm_id = s_most_recent_alarm_id;
       }
       PBL_LOG_INFO("Clock change during alarm %u, triggered alarm", s_most_recent_alarm_id);
       // The alarm is now firing; stop the smart-snooze loop.
@@ -1192,24 +1259,15 @@ void alarm_handle_clock_change(void) {
     }
   }
 
-  // Update the day for any just once alarms
-  for (int i = 0; i < MAX_CONFIGURED_ALARMS; ++i) {
-    AlarmConfig config;
-    if (prv_alarm_get_config(&file, i, &config)) {
-      if (config.kind == ALARM_KIND_JUST_ONCE) {
-        prv_set_day_for_just_once_alarm(&config, config.hour, config.minute);
-        Alarm alarm = {
-          .id = i,
-          .config = config,
-        };
-        prv_persist_alarm(&file, &alarm);
-      }
-    }
-  }
+  prv_refresh_just_once_alarm_days(&file);
 
   prv_reload_alarms(&file);
 
   prv_file_close_and_unlock(&file);
+
+  if (record_alarm_id != ALARM_INVALID_ID) {
+    prv_alarm_operation(record_alarm_id, prv_record_alarm_op, NULL);
+  }
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -1233,6 +1291,26 @@ void alarm_init(void) {
     s_snooze_delay_m = snooze_delay_value;
   }
 
+  AlarmArmedRecord armed;
+  if (settings_file_get(&file, ALARM_PREF_KEY_ARMED, strlen(ALARM_PREF_KEY_ARMED),
+                        &armed, sizeof(armed)) == S_SUCCESS) {
+    s_armed_record = armed;
+
+    // An alarm which was armed for a time we have already passed never got the chance to fire:
+    // the watch was down (rebooting, or updating) when it was due.
+    const time_t now = rtc_get_time();
+    if (armed.time != 0 && armed.id != ALARM_INVALID_ID && now >= armed.time &&
+        (now - armed.time) <= ALARM_MISSED_MAX_DELAY_S) {
+      s_missed_alarm_id = armed.id;
+      s_missed_alarm_time = armed.time;
+      PBL_LOG_INFO("Alarm %d missed by %lds, firing once alarms are enabled", armed.id,
+              (long)(now - armed.time));
+    }
+  }
+
+  // A "just once" alarm which was missed is still armed for its original weekday, a week out.
+  prv_refresh_just_once_alarm_days(&file);
+
   prv_reload_alarms(&file);
   prv_file_close_and_unlock(&file);
 }
@@ -1240,6 +1318,19 @@ void alarm_init(void) {
 // ----------------------------------------------------------------------------------------------
 void alarm_service_enable_alarms(bool enable) {
   s_alarms_enabled = enable;
+
+  if (!enable || s_missed_alarm_id == ALARM_INVALID_ID) {
+    return;
+  }
+
+  const AlarmId id = s_missed_alarm_id;
+  s_missed_alarm_id = ALARM_INVALID_ID;
+
+  if ((rtc_get_time() - s_missed_alarm_time) > ALARM_MISSED_MAX_DELAY_S) {
+    PBL_LOG_DBG("Missed alarm %d is too late to fire", id);
+    return;
+  }
+  system_task_add_callback(prv_timer_kernel_bg_callback, (void *)(intptr_t)id);
 }
 
 
