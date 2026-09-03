@@ -7,8 +7,11 @@
 #include "ancs_util.h"
 #include "ancs_definition.h"
 
+#include "comm/ble/gap_le_connection.h"
+#include "comm/ble/gatt_client_accessors.h"
 #include "comm/ble/gatt_client_subscriptions.h"
 #include "comm/ble/gatt_client_operations.h"
+#include "comm/bt_lock.h"
 
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
@@ -1288,4 +1291,38 @@ void ancs_destroy(void) {
   kernel_free(s_ancs_client);
   s_ancs_client = NULL;
   prv_put_ancs_disconnected_event();
+}
+
+bool ancs_is_connected_to_device(const BTDeviceInternal *device) {
+  if (!s_ancs_client || !device) {
+    return false;
+  }
+  for (int c = 0; c < NumANCSCharacteristic; ++c) {
+    BLECharacteristic charx = s_ancs_client->characteristics[c];
+    if (charx != BLE_CHARACTERISTIC_INVALID) {
+      BTDeviceInternal ancs_dev = gatt_client_characteristic_get_device(charx);
+      return bt_device_internal_equal(&ancs_dev, device);
+    }
+  }
+  return false;
+}
+
+BTBondingID ancs_get_bonding_id(void) {
+  if (!s_ancs_client) {
+    return BT_BONDING_ID_INVALID;
+  }
+  bt_lock();
+  BTBondingID bonding_id = BT_BONDING_ID_INVALID;
+  for (int c = 0; c < NumANCSCharacteristic; ++c) {
+    BLECharacteristic charx = s_ancs_client->characteristics[c];
+    if (charx != BLE_CHARACTERISTIC_INVALID) {
+      GAPLEConnection *conn = gatt_client_characteristic_get_connection(charx);
+      if (conn && conn->bonding_id != BT_BONDING_ID_INVALID) {
+        bonding_id = conn->bonding_id;
+        break;
+      }
+    }
+  }
+  bt_unlock();
+  return bonding_id;
 }

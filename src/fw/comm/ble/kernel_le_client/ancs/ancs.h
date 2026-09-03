@@ -4,6 +4,8 @@
 #pragma once
 
 #include "applib/bluetooth/ble_client.h"
+#include <bluetooth/bluetooth_types.h>
+#include <pbl/btutil/bt_device.h>
 
 //! @file ancs.h Module implementing an ANCS client.
 //! See http://bit.ly/ancs-spec for Apple's documentation of ANCS
@@ -77,3 +79,9 @@ void ancs_perform_action(uint32_t notification_uid, uint8_t action_id);
 
 //! Called by kernel_le_client/dis/dis.c
 void ancs_handle_ios9_or_newer_detected(void);
+
+//! Checks whether the ANCS client is currently connected to the specified device.
+bool ancs_is_connected_to_device(const BTDeviceInternal *device);
+
+//! Gets the bonding ID of the connection hosting ANCS, or BT_BONDING_ID_INVALID if none.
+BTBondingID ancs_get_bonding_id(void);

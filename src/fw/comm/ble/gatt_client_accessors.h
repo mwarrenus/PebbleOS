@@ -6,6 +6,8 @@
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/gatt_service_types.h>
 
+typedef struct GAPLEConnection GAPLEConnection;
+
 //! @file
 //! This file contains functions to access any discovered GATT Services,
 //! Characteristics and Descriptors. The data structures are used internally
@@ -88,6 +90,9 @@ BLEService gatt_client_characteristic_get_service(BLECharacteristic characterist
 
 //! @see ble_characteristic_get_device
 BTDeviceInternal gatt_client_characteristic_get_device(BLECharacteristic characteristic);
+
+//! Must be called with bt_lock held.
+GAPLEConnection *gatt_client_characteristic_get_connection(BLECharacteristic characteristic);
 
 //! @see ble_characteristic_get_descriptors
 uint8_t gatt_client_characteristic_get_descriptors(BLECharacteristic characteristic,

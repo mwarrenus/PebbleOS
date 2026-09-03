@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "pbl/services/notifications/ancs/ancs_item.h"
+#include "comm/ble/kernel_le_client/ancs/ancs.h"
 
 #include "pbl/services/notifications/ancs/ancs_notifications_util.h"
 
@@ -426,7 +427,10 @@ TimelineItem *ancs_item_create_and_populate(ANCSAttribute *notif_attributes[],
 
   size_t required_space_for_strings = 0;
 
-  BTBondingID bonding = bt_persistent_storage_get_ble_ancs_bonding();
+  BTBondingID bonding = ancs_get_bonding_id();
+  if (bonding == BT_BONDING_ID_INVALID) {
+    bonding = bt_persistent_storage_get_ble_ancs_bonding();
+  }
   const char *prefix = bt_persistent_storage_get_connection_marker_prefix(bonding);
   const size_t prefix_len = prefix ? strlen(prefix) : 0;
 

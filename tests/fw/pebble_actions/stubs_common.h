@@ -66,6 +66,10 @@ void system_task_add_callback(void (*callback)(void *data), void *data) {
 void ancs_perform_action(uint32_t notification_uid, uint8_t action_id) {
 }
 
+BTBondingID ancs_get_bonding_id(void) {
+  return BT_BONDING_ID_INVALID;
+}
+
 status_t blob_db_delete(BlobDBId db_id, const uint8_t *key, int key_len) {
   return S_SUCCESS;
 }

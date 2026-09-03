@@ -5,6 +5,7 @@
 
 #include "ams_types.h"
 #include "applib/bluetooth/ble_client.h"
+#include <pbl/btutil/bt_device.h>
 
 //! @file ams.h Module implementing an AMS client.
 //! See http://bit.ly/ams-spec for Apple's documentation of AMS.
@@ -93,3 +94,6 @@ const char *ams_music_server_debug_name(void);
 //! For testing purposes.
 //! @return Whether AMS has registered itself for updates of all entities (Player, Queue and Track).
 bool ams_is_registered_for_all_entity_updates(void);
+
+//! Checks whether the AMS client is currently connected to the specified device.
+bool ams_is_connected_to_device(const BTDeviceInternal *device);

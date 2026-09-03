@@ -44,6 +44,23 @@
 #include "stubs_nexmo.h"
 #include "stubs_codepoint.h"
 #include "stubs_utf8.h"
+#include "stubs_bt_lock.h"
+
+static GAPLEConnection s_fake_connection = {
+  .bonding_id = 1,
+};
+
+GAPLEConnection *gatt_client_characteristic_get_connection(BLECharacteristic characteristic_ref) {
+  return &s_fake_connection;
+}
+
+BTDeviceInternal gatt_client_characteristic_get_device(BLECharacteristic characteristic_ref) {
+  return (BTDeviceInternal) {
+    .address.octets = {
+      0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+    },
+  };
+}
 
 void launcher_task_add_callback(void (*callback)(void *data), void *data) {
   callback(data);

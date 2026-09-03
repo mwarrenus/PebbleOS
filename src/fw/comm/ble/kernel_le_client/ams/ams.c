@@ -704,3 +704,17 @@ bool ams_is_registered_for_all_entity_updates(void) {
   }
   return (s_ams_client->next_entity_to_register == AMSEntityIDInvalid);
 }
+
+bool ams_is_connected_to_device(const BTDeviceInternal *device) {
+  if (!s_ams_client || !device) {
+    return false;
+  }
+  for (int c = 0; c < NumAMSCharacteristic; ++c) {
+    BLECharacteristic charx = s_ams_client->characteristics[c];
+    if (charx != BLE_CHARACTERISTIC_INVALID) {
+      BTDeviceInternal ams_dev = gatt_client_characteristic_get_device(charx);
+      return bt_device_internal_equal(&ams_dev, device);
+    }
+  }
+  return false;
+}

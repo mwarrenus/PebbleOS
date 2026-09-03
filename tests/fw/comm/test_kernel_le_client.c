@@ -21,10 +21,16 @@
 #include "stubs_rand_ptr.h"
 #include "stubs_rtc.h"
 
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
+
 void ams_create(void) {
 }
 
 void ams_destroy(void) {
+}
+
+bool ams_is_connected_to_device(const BTDeviceInternal *device) {
+  return false;
 }
 
 void ancs_create(void) {
@@ -33,11 +39,20 @@ void ancs_create(void) {
 void ancs_destroy(void) {
 }
 
+bool ancs_is_connected_to_device(const BTDeviceInternal *device) {
+  return false;
+}
+
 void app_launch_handle_disconnection(void) {
 }
 
 BTBondingID bt_persistent_storage_get_ble_ancs_bonding(void) {
   return 1;
+}
+
+void bt_persistent_storage_for_each_ble_pairing(BtPersistBondingDBEachBLE cb, void *context) {
+  BTBondingID bonding = 1;
+  cb(NULL, NULL, NULL, &bonding, context);
 }
 
 bool bt_persistent_storage_is_ble_ancs_bonding(BTBondingID bonding) {

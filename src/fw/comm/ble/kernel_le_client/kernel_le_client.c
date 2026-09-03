@@ -23,6 +23,8 @@
 #include "system/passert.h"
 #include "pbl/util/likely.h"
 
+#include "pbl/util/size.h"
+#include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "comm/ble/gap_le_connect.h"
 #include "comm/ble/gap_le_slave_reconnect.h"
 #include "comm/ble/gatt_client_accessors.h"
@@ -450,16 +452,20 @@ static void prv_handle_connection_event(const PebbleBLEConnectionEvent *event) {
       ancs_destroy();
 #endif
       app_launch_handle_disconnection();
+      gatt_client_op_cleanup(GAPLEClientKernel);
     } else {
 #if defined(CONFIG_BT_ANCS_CLIENT)
-      ancs_invalidate_all_references();
+      if (ancs_is_connected_to_device(&device)) {
+        ancs_invalidate_all_references();
+      }
 #endif
 #if defined(CONFIG_BT_AMS_CLIENT)
-      ams_invalidate_all_references();
+      if (ams_is_connected_to_device(&device)) {
+        ams_invalidate_all_references();
+      }
 #endif
     }
     gap_le_slave_reconnect_start();
-    gatt_client_op_cleanup(GAPLEClientKernel);
   }
 }
 
@@ -523,13 +529,35 @@ void kernel_le_client_handle_bonding_change(BTBondingID bonding, BtPersistBondin
 }
 
 // -------------------------------------------------------------------------------------------------
+#define MAX_GATEWAY_BONDINGS (8)
+
+typedef struct {
+  BTBondingID ids[MAX_GATEWAY_BONDINGS];
+  size_t count;
+} CollectBondingIdsData;
+
+static void prv_collect_bonding_ids_cb(BTDeviceInternal *device,
+                                       SMIdentityResolvingKey *irk,
+                                       const char *name,
+                                       BTBondingID *bonding_id,
+                                       void *context) {
+  CollectBondingIdsData *data = context;
+  if (bonding_id && *bonding_id != BT_BONDING_ID_INVALID &&
+      data->count < ARRAY_LENGTH(data->ids)) {
+    data->ids[data->count++] = *bonding_id;
+  }
+}
+
+// -------------------------------------------------------------------------------------------------
 void kernel_le_client_init(void) {
   // Reset analytics
   ppogatt_reset_disconnect_counter();
 
-  BTBondingID gateway_bonding = bt_persistent_storage_get_ble_ancs_bonding();
-  if (gateway_bonding != BT_BONDING_ID_INVALID) {
-    prv_connect_gateway_bonding(gateway_bonding);
+  CollectBondingIdsData data = {0};
+  bt_persistent_storage_for_each_ble_pairing(prv_collect_bonding_ids_cb, &data);
+
+  for (size_t i = 0; i < data.count; ++i) {
+    prv_connect_gateway_bonding(data.ids[i]);
   }
 }
 
