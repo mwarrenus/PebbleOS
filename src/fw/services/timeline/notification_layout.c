@@ -594,12 +594,23 @@ static NOINLINE void prv_card_render_internal(NotificationLayout *layout, GConte
 
     if (notifications_are_multi_phone_indicators_enabled()) {
       const uint8_t phone_idx = timeline_item_get_phone_idx(layout->info.item);
-      const char num_str[2] = { (char)('1' + phone_idx), '\0' };
-      GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
-      const GRect num_box = GRect(DISP_COLS - 16, (LAYOUT_BANNER_HEIGHT_RECT - 14) / 2, 12, 14);
-      graphics_context_set_text_color(ctx, colors->primary_color);
-      graphics_draw_text(ctx, num_str, font, num_box, GTextOverflowModeFill,
-                         GTextAlignmentCenter, NULL);
+      const GColor indicator_color = gcolor_legible_over(colors->bg_color);
+      graphics_context_set_fill_color(ctx, indicator_color);
+
+      const int16_t pip_x = DISP_COLS - 10;
+      const int16_t pip_cy = LAYOUT_BANNER_HEIGHT_RECT / 2;
+
+      if (phone_idx == 0) {
+        // Phone 1: single pip / dot
+        const GRect pip = GRect(pip_x, pip_cy - 1, 3, 3);
+        graphics_fill_rect(ctx, &pip);
+      } else if (phone_idx == 1) {
+        // Phone 2: double vertical pips / dots
+        const GRect pip1 = GRect(pip_x, pip_cy - 4, 3, 3);
+        const GRect pip2 = GRect(pip_x, pip_cy + 2, 3, 3);
+        graphics_fill_rect(ctx, &pip1);
+        graphics_fill_rect(ctx, &pip2);
+      }
     }
 #endif
   }
