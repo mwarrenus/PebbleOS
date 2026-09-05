@@ -281,7 +281,8 @@ static void prv_settings_bluetooth_event_handler(PebbleEvent *event, void *conte
 static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_layer,
                                              const char *remote_name, const char *connected_string,
                                              const char *le_string,
-                                             const char *is_sharing_heart_rate_string) {
+                                             const char *is_sharing_heart_rate_string,
+                                             int phone_idx) {
   const GFont font = ((le_string || is_sharing_heart_rate_string) ?
                       fonts_get_system_font(FONT_KEY_GOTHIC_18) : NULL);
 
@@ -307,7 +308,50 @@ static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_la
     ((Layer *)cell_layer)->bounds.size.h -= SHARING_HEART_RATE_EXTRA_HEIGHT_PX;
   }
 
-  menu_cell_basic_draw(ctx, cell_layer, remote_name, connected_string, NULL);
+  const bool has_indicator = (phone_idx >= 0 && connected_string && connected_string[0] != '\0');
+  menu_cell_basic_draw(ctx, cell_layer, remote_name, has_indicator ? "" : connected_string, NULL);
+
+  if (has_indicator) {
+    const GFont title_font = system_theme_get_font_for_default_size(TextStyleFont_MenuCellTitle);
+    const int16_t title_height = fonts_get_font_height(title_font);
+    const GFont subtitle_font =
+        system_theme_get_font_for_default_size(TextStyleFont_MenuCellSubtitle);
+    const int16_t subtitle_height = fonts_get_font_height(subtitle_font);
+    const int16_t full_height = title_height + subtitle_height + 10;
+    const int horizontal_margin = menu_cell_basic_horizontal_inset();
+    const int vertical_margin = (cell_layer->bounds.size.h - full_height) / 2;
+
+    GRect sub_box = cell_layer->bounds;
+    sub_box.origin.x += horizontal_margin;
+    sub_box.origin.y += vertical_margin + title_height;
+    sub_box.size.w -= horizontal_margin;
+    sub_box.size.h = subtitle_height + 4;
+
+    const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+    const GColor color = is_highlighted ? GColorWhite : GColorBlack;
+    graphics_context_set_text_color(ctx, color);
+    graphics_context_set_fill_color(ctx, color);
+
+    const int16_t pip_x = sub_box.origin.x;
+    const int16_t pip_cy = sub_box.origin.y + (subtitle_height / 2);
+
+    if (phone_idx == 0) {
+      // Phone 1: single vertical pip / dot
+      const GRect pip = GRect(pip_x, pip_cy - 1, 2, 3);
+      graphics_fill_rect(ctx, &pip);
+    } else if (phone_idx == 1) {
+      // Phone 2: two vertical pips / dots
+      const GRect pip1 = GRect(pip_x, pip_cy - 4, 2, 3);
+      const GRect pip2 = GRect(pip_x, pip_cy + 1, 2, 3);
+      graphics_fill_rect(ctx, &pip1);
+      graphics_fill_rect(ctx, &pip2);
+    }
+
+    sub_box.origin.x += 7;
+    sub_box.size.w -= 7;
+    graphics_draw_text(ctx, connected_string, subtitle_font, sub_box,
+                       GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+  }
 
   if (is_sharing_heart_rate_string) {
     // Restore original height:
@@ -328,7 +372,8 @@ bool settings_bluetooth_is_sharing_heart_rate_for_stored_remote(StoredRemote* re
 static void prv_draw_stored_remote_item_round(GContext *ctx, const Layer *cell_layer,
                                               const char *remote_name, const char *connected_string,
                                               const char *le_string,
-                                              const char *is_sharing_heart_rate_string) {
+                                              const char *is_sharing_heart_rate_string,
+                                              int phone_idx) {
 #  ifdef CONFIG_HRM
   _Static_assert(false, "FIXME: Implement round drawing code to show heart rate sharing status!");
 #  endif  // CONFIG_HRM
@@ -351,17 +396,12 @@ static void draw_stored_remote_item(GContext *ctx, const Layer *cell_layer,
 
   // Add ellipsis if the name might have been cut off by the mobile
   const char ellipsis[] = UTF8_ELLIPSIS_STRING;
-  const char *prefix = bt_persistent_storage_get_connection_marker_prefix(remote->ble.bonding);
-  if (!prefix || prefix[0] == '\0') {
-    prefix = (device_index == 0) ? "(1) " : ((device_index == 1) ? "(2) " : "");
-  }
-  const size_t prefix_len = strlen(prefix);
   const size_t max_name_size = BT_DEVICE_NAME_BUFFER_SIZE - 2;
   const size_t name_size = strnlen(remote->name, BT_DEVICE_NAME_BUFFER_SIZE);
-  char *remote_name = task_zalloc_check(prefix_len + max_name_size + sizeof(ellipsis));
-  snprintf(remote_name, prefix_len + max_name_size + sizeof(ellipsis), "%s%s", prefix, remote->name);
+  char *remote_name = task_zalloc_check(max_name_size + sizeof(ellipsis));
+  strncpy(remote_name, remote->name, max_name_size);
   if (name_size > max_name_size) {
-    const size_t ellipsis_start_offset = utf8_get_size_truncate(remote_name, prefix_len + name_size);
+    const size_t ellipsis_start_offset = utf8_get_size_truncate(remote_name, max_name_size);
     strncpy(&remote_name[ellipsis_start_offset], ellipsis, sizeof(ellipsis));
   }
 
@@ -369,10 +409,18 @@ static void draw_stored_remote_item(GContext *ctx, const Layer *cell_layer,
       (settings_bluetooth_is_sharing_heart_rate_for_stored_remote(remote) ?
        i18n_get("Sharing Heart Rate ❤", data) : NULL);
 
+  int phone_idx = -1;
+  if (connected && (bt_persistent_storage_get_max_phones() > 1)) {
+    phone_idx = bt_persistent_storage_get_ble_pairing_index_by_id(remote->ble.bonding);
+    if (phone_idx < 0) {
+      phone_idx = (int)device_index;
+    }
+  }
+
   PBL_IF_RECT_ELSE(prv_draw_stored_remote_item_rect,
                    prv_draw_stored_remote_item_round)(ctx, cell_layer, remote_name,
                                                       connected_string, le_string,
-                                                      is_sharing_heart_rate);
+                                                      is_sharing_heart_rate, phone_idx);
 
   task_free(remote_name);
 }
