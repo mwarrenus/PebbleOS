@@ -107,9 +107,15 @@ bool is_remote_connected(StoredRemote* remote) {
 static int remote_comparator(StoredRemote* remote, StoredRemote* other) {
   if (is_remote_connected(remote) != is_remote_connected(other)) {
     return is_remote_connected(remote) ? -1 : 1;
-  } else {
-    return strncmp(remote->name, other->name, sizeof(remote->name));
   }
+  if (bt_persistent_storage_get_max_phones() > 1) {
+    int idx_remote = bt_persistent_storage_get_ble_pairing_index_by_id(remote->ble.bonding);
+    int idx_other = bt_persistent_storage_get_ble_pairing_index_by_id(other->ble.bonding);
+    if (idx_remote >= 0 && idx_other >= 0 && idx_remote != idx_other) {
+      return (idx_remote < idx_other) ? -1 : 1;
+    }
+  }
+  return strncmp(remote->name, other->name, sizeof(remote->name));
 }
 
 static void add_remote(SettingsBluetoothData* data, StoredRemote* remote) {
@@ -142,34 +148,26 @@ static void prv_add_ble_remote(BTDeviceInternal *device, SMIdentityResolvingKey 
   StoredRemote* remote = stored_remote_create();
   remote->ble.bonding = *id;
   prv_copy_device_name_with_fallback(remote, name);
+
+  bt_lock();
+  GAPLEConnection *connection = gap_le_connection_find_by_irk(irk);
+  if (!connection) {
+    connection = gap_le_connection_by_device(device);
+  }
+  remote->ble.connection = connection;
+  if (connection && connection->device_name && connection->device_name[0] != '\0') {
+    prv_copy_device_name_with_fallback(remote, connection->device_name);
+  }
+#ifdef CONFIG_HRM
+  remote->ble.is_sharing_heart_rate = ble_hrm_is_sharing_to_connection(connection);
+#endif
+  bt_unlock();
+
   add_remote(data, remote);
 }
 
 static void prv_add_ble_remotes(SettingsBluetoothData *data) {
   bt_persistent_storage_for_each_ble_pairing(prv_add_ble_remote, data);
-
-  StoredRemote *remote = (StoredRemote *)data->remote_list_head;
-  while (remote) {
-    SMIdentityResolvingKey irk;
-    BTDeviceInternal device;
-
-    if (bt_persistent_storage_get_ble_pairing_by_id(remote->ble.bonding, &irk, &device, NULL)) {
-      bt_lock();
-      GAPLEConnection *connection = gap_le_connection_find_by_irk(&irk);
-      if (!connection) {
-        connection = gap_le_connection_by_device(&device);
-      }
-      remote->ble.connection = connection;
-      if (connection && connection->device_name && connection->device_name[0] != '\0') {
-        prv_copy_device_name_with_fallback(remote, connection->device_name);
-      }
-#ifdef CONFIG_HRM
-      remote->ble.is_sharing_heart_rate = ble_hrm_is_sharing_to_connection(connection);
-#endif
-      bt_unlock();
-    }
-    remote = (StoredRemote *)remote->list_node.next;
-  }
 }
 
 static void prv_clear_remote_list(SettingsBluetoothData* data) {
@@ -328,9 +326,15 @@ static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_la
     sub_box.size.h = subtitle_height + 4;
 
     const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
-    const GColor color = is_highlighted ? GColorWhite : GColorBlack;
-    graphics_context_set_text_color(ctx, color);
-    graphics_context_set_fill_color(ctx, color);
+    const GColor text_color = is_highlighted ? GColorWhite : GColorBlack;
+    GColor indicator_color = is_highlighted ? GColorWhite : GColorBlack;
+#if PBL_COLOR
+    if (!is_highlighted) {
+      indicator_color = GColorDarkGray;
+    }
+#endif
+    graphics_context_set_text_color(ctx, text_color);
+    graphics_context_set_fill_color(ctx, indicator_color);
 
     const int16_t pip_x = sub_box.origin.x;
     const int16_t pip_cy = sub_box.origin.y + (subtitle_height / 2);
