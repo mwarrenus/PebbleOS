@@ -310,10 +310,9 @@ static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_la
   menu_cell_basic_draw(ctx, cell_layer, remote_name, has_indicator ? "" : connected_string, NULL);
 
   if (has_indicator) {
-    const GFont title_font = system_theme_get_font_for_default_size(TextStyleFont_MenuCellTitle);
+    const GFont title_font = system_theme_get_font(TextStyleFont_MenuCellTitle);
     const int16_t title_height = fonts_get_font_height(title_font);
-    const GFont subtitle_font =
-        system_theme_get_font_for_default_size(TextStyleFont_MenuCellSubtitle);
+    const GFont subtitle_font = system_theme_get_font(TextStyleFont_MenuCellSubtitle);
     const int16_t subtitle_height = fonts_get_font_height(subtitle_font);
     const int16_t full_height = title_height + subtitle_height + 10;
     const int horizontal_margin = menu_cell_basic_horizontal_inset();
@@ -337,7 +336,10 @@ static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_la
     graphics_context_set_fill_color(ctx, indicator_color);
 
     const int16_t pip_x = sub_box.origin.x;
-    const int16_t pip_cy = sub_box.origin.y + (subtitle_height / 2);
+    // Vertically center with the text on the "Connected" line. Because font glyphs sit
+    // on the baseline near the bottom of the line box with internal ascent padding above,
+    // the visual center of the text is aligned below subtitle_height / 2.
+    const int16_t pip_cy = sub_box.origin.y + subtitle_height - (subtitle_height * 7 / 24);
 
     if (phone_idx == 0) {
       // Phone 1: single vertical pip / dot
@@ -354,7 +356,7 @@ static void prv_draw_stored_remote_item_rect(GContext *ctx, const Layer *cell_la
     sub_box.origin.x += 7;
     sub_box.size.w -= 7;
     graphics_draw_text(ctx, connected_string, subtitle_font, sub_box,
-                       GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   }
 
   if (is_sharing_heart_rate_string) {
